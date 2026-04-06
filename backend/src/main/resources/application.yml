@@ -1,0 +1,71 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: openchat
+
+  datasource:
+    url: ${SPRING_DATASOURCE_URL:jdbc:postgresql://localhost:5432/openchat}
+    username: ${SPRING_DATASOURCE_USERNAME:ollama}
+    password: ${SPRING_DATASOURCE_PASSWORD:ollama123}
+    driver-class-name: org.postgresql.Driver
+    hikari:
+      connection-timeout: 20000        # 20s para obter conexão do pool
+      maximum-pool-size: 10            # máximo de conexões simultâneas
+      minimum-idle: 2                  # conexões mantidas abertas em idle
+      idle-timeout: 300000             # 5 min antes de fechar conexão idle
+
+  jpa:
+    hibernate:
+      ddl-auto: update                 # cria/atualiza tabelas automaticamente
+    show-sql: false                    # mude para true para debugar queries
+    open-in-view: false                # evita o anti-pattern de lazy load fora da transação
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+        jdbc:
+          time_zone: UTC
+
+  servlet:
+    multipart:
+      max-file-size: 20MB
+      max-request-size: 25MB
+
+  jackson:
+    default-property-inclusion: non_null   # omite campos null no JSON
+    serialization:
+      write-dates-as-timestamps: false     # datas como ISO-8601 string
+
+# ── Ollama ────────────────────────────────────────────────────────────────────
+ollama:
+  base-url: ${OLLAMA_BASE_URL:http://localhost:11434}
+  # Em Docker no Linux, troque para:
+  #   http://172.17.0.1:11434
+  # ou adicione extra_hosts no docker-compose e use:
+  #   http://host.docker.internal:11434
+
+# ── CORS ──────────────────────────────────────────────────────────────────────
+cors:
+  allowed-origins: ${CORS_ALLOWED_ORIGINS:http://localhost:3000,http://localhost:8080}
+
+# ── Logging ───────────────────────────────────────────────────────────────────
+logging:
+  level:
+    root: INFO
+    otavio.openchat: DEBUG          # log detalhado do projeto
+    org.springframework.web: INFO
+    org.hibernate.SQL: WARN               # mude para DEBUG para ver SQL
+  pattern:
+    console: "%d{HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n"
+
+# ── Actuator (health check para o Docker) ─────────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: never

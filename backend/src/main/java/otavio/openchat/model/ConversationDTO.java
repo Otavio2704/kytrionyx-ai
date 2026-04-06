@@ -1,0 +1,73 @@
+package otavio.openchat.model;
+
+import lombok.*;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.UUID;
+
+/**
+ * DTO usado para serialização JSON das conversas.
+ * Evita LazyInitializationException ao separar a representação
+ * da entidade JPA da resposta da API.
+ */
+@Getter
+@Setter
+@NoArgsConstructor
+@AllArgsConstructor
+@Builder
+public class ConversationDTO {
+
+    private UUID id;
+    private String title;
+    private String modelName;
+    private LocalDateTime createdAt;
+    private LocalDateTime updatedAt;
+    private boolean pinned;
+    private List<MessageDTO> messages; // null na listagem, preenchido no detalhe
+
+    @Getter
+    @Setter
+    @NoArgsConstructor
+    @AllArgsConstructor
+    @Builder
+    public static class MessageDTO {
+        private UUID id;
+        private String role;
+        private String content;
+        private LocalDateTime createdAt;
+    }
+
+    // --- Conversores estáticos ---
+
+    public static ConversationDTO fromEntity(Conversation c) {
+        return ConversationDTO.builder()
+                .id(c.getId())
+                .title(c.getTitle())
+                .modelName(c.getModelName())
+                .createdAt(c.getCreatedAt())
+                .updatedAt(c.getUpdatedAt())
+                .pinned(c.isPinned())
+                .build(); // sem mensagens — para listagem
+    }
+
+    public static ConversationDTO fromEntityWithMessages(Conversation c) {
+        List<MessageDTO> msgs = c.getMessages().stream()
+                .map(m -> MessageDTO.builder()
+                        .id(m.getId())
+                        .role(m.getRole())
+                        .content(m.getContent())
+                        .createdAt(m.getCreatedAt())
+                        .build())
+                .toList();
+
+        return ConversationDTO.builder()
+                .id(c.getId())
+                .title(c.getTitle())
+                .modelName(c.getModelName())
+                .createdAt(c.getCreatedAt())
+                .updatedAt(c.getUpdatedAt())
+                .pinned(c.isPinned())
+                .messages(msgs)
+                .build();
+    }
+}

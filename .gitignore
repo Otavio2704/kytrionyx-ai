@@ -1,0 +1,13 @@
+# Java
+backend/target/
+backend/.mvn/
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+
+# Runtime
+*.log
