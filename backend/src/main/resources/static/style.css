@@ -461,3 +461,64 @@ input[type="range"] { width:100%;accent-color:var(--accent);height:4px;cursor:po
 .project-context-badge[hidden] { display: none; }
 .btn-clear-project { background: none; border: none; color: var(--accent-dim); cursor: pointer; font-size: 13px; margin-left: auto; transition: color var(--transition); }
 .btn-clear-project:hover { color: var(--danger); }
+
+/* ════════════════════════════════════════════════════════════════
+   PATCH — Fixados inline + ajustes de sidebar
+   Adicione este bloco ao FINAL do style.css existente
+════════════════════════════════════════════════════════════════ */
+
+/* Separador de seção dentro da lista de histórico */
+.history-section-sep {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--text-2);
+  padding: 10px 8px 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.history-section-sep::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--bg-3);
+}
+
+/* Item fixado — destaque sutil sem seção própria */
+.history-item.pinned {
+  background: color-mix(in srgb, var(--accent-glow) 60%, transparent);
+  border-color: color-mix(in srgb, var(--accent-dim) 40%, transparent);
+}
+
+.history-item.pinned:hover {
+  background: var(--accent-glow);
+  border-color: var(--accent-dim);
+}
+
+.history-item.pinned.active {
+  background: var(--accent-glow);
+  border-color: var(--accent-dim);
+}
+
+/* Indicador de pin no título */
+.pin-indicator {
+  font-size: 10px;
+  margin-right: 3px;
+  vertical-align: middle;
+  opacity: 0.8;
+}
+
+/* Botão de pin ativo */
+.btn-history-action.pin.pinned {
+  color: var(--accent);
+  opacity: 1;
+}
+
+.btn-history-action.pin:hover {
+  color: var(--accent);
+}

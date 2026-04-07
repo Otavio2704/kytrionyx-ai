@@ -38,25 +38,23 @@ public class Conversation {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    /** Se true, conversa aparece na seção 'Fixados' acima dos recentes */
     @Column(nullable = false)
     @Builder.Default
     private boolean pinned = false;
 
     /**
-     * Relacionamento 1:N com mensagens.
-     * CascadeType.ALL + orphanRemoval garante que deletar a conversa
-     * apaga todas as mensagens associadas automaticamente.
-     * FetchType.LAZY evita carregar mensagens desnecessariamente
-     * na listagem do histórico (sidebar).
+     * Projeto ao qual esta conversa pertence (opcional).
+     * Quando um chat é iniciado a partir de um projeto, este campo é preenchido.
+     * Permite listar todos os chats de um projeto diretamente na aba de projetos.
      */
+    @Column(name = "project_id")
+    private UUID projectId;
+
     @OneToMany(mappedBy = "conversation", cascade = CascadeType.ALL,
                orphanRemoval = true, fetch = FetchType.LAZY)
     @OrderBy("created_at ASC")
     @Builder.Default
     private List<Message> messages = new ArrayList<>();
-
-    // --- Métodos auxiliares ---
 
     public void addMessage(Message message) {
         messages.add(message);

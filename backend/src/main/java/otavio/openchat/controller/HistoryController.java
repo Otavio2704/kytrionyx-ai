@@ -19,10 +19,6 @@ public class HistoryController {
 
     private final ConversationService conversationService;
 
-    /**
-     * GET /api/history
-     * Lista todas as conversas sem mensagens (para a sidebar).
-     */
     @GetMapping
     public ResponseEntity<List<ConversationDTO>> listConversations() {
         List<ConversationDTO> list = conversationService.getAllConversations()
@@ -32,10 +28,6 @@ public class HistoryController {
         return ResponseEntity.ok(list);
     }
 
-    /**
-     * GET /api/history/{id}
-     * Retorna uma conversa com todas as mensagens.
-     */
     @GetMapping("/{id}")
     public ResponseEntity<ConversationDTO> getConversation(@PathVariable UUID id) {
         return conversationService.getConversationById(id)
@@ -48,9 +40,19 @@ public class HistoryController {
     }
 
     /**
-     * PATCH /api/history/{id}/pin
-     * Alterna o estado de pin. Máximo 3 fixados.
+     * GET /api/history/project/{projectId}
+     * Lista todos os chats vinculados a um projeto específico.
+     * Usado para exibir os chats dentro do modal de detalhes do projeto.
      */
+    @GetMapping("/project/{projectId}")
+    public ResponseEntity<List<ConversationDTO>> getConversationsByProject(@PathVariable UUID projectId) {
+        List<ConversationDTO> list = conversationService.getConversationsByProject(projectId)
+                .stream()
+                .map(ConversationDTO::fromEntity)
+                .toList();
+        return ResponseEntity.ok(list);
+    }
+
     @PatchMapping("/{id}/pin")
     public ResponseEntity<Map<String, Object>> togglePin(@PathVariable UUID id) {
         boolean success = conversationService.togglePin(id);
@@ -60,10 +62,6 @@ public class HistoryController {
         return ResponseEntity.ok(Map.of("success", true));
     }
 
-    /**
-     * PATCH /api/history/{id}/rename
-     * Renomeia o título de uma conversa sem alterar as mensagens.
-     */
     @PatchMapping("/{id}/rename")
     public ResponseEntity<Void> renameConversation(@PathVariable UUID id,
                                                     @RequestBody Map<String, String> body) {
@@ -74,10 +72,6 @@ public class HistoryController {
                 : ResponseEntity.notFound().build();
     }
 
-    /**
-     * DELETE /api/history/{id}
-     * Deleta uma conversa e todas as suas mensagens.
-     */
     @DeleteMapping("/{id}")
     public ResponseEntity<Void> deleteConversation(@PathVariable UUID id) {
         boolean deleted = conversationService.deleteConversation(id);

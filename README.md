@@ -4,6 +4,7 @@
 EM DESENVOLVIMENTO
 ```
 
+=======
 # ⬡ OpenChat
 
 **Interface web local para modelos de linguagem open source via Ollama**

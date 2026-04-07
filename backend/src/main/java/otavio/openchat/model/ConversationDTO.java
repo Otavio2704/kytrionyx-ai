@@ -5,11 +5,6 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.UUID;
 
-/**
- * DTO usado para serialização JSON das conversas.
- * Evita LazyInitializationException ao separar a representação
- * da entidade JPA da resposta da API.
- */
 @Getter
 @Setter
 @NoArgsConstructor
@@ -23,7 +18,8 @@ public class ConversationDTO {
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;
     private boolean pinned;
-    private List<MessageDTO> messages; // null na listagem, preenchido no detalhe
+    private UUID projectId;           // projeto ao qual este chat pertence (pode ser null)
+    private List<MessageDTO> messages;
 
     @Getter
     @Setter
@@ -37,8 +33,6 @@ public class ConversationDTO {
         private LocalDateTime createdAt;
     }
 
-    // --- Conversores estáticos ---
-
     public static ConversationDTO fromEntity(Conversation c) {
         return ConversationDTO.builder()
                 .id(c.getId())
@@ -47,7 +41,8 @@ public class ConversationDTO {
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
                 .pinned(c.isPinned())
-                .build(); // sem mensagens — para listagem
+                .projectId(c.getProjectId())
+                .build();
     }
 
     public static ConversationDTO fromEntityWithMessages(Conversation c) {
@@ -67,6 +62,7 @@ public class ConversationDTO {
                 .createdAt(c.getCreatedAt())
                 .updatedAt(c.getUpdatedAt())
                 .pinned(c.isPinned())
+                .projectId(c.getProjectId())
                 .messages(msgs)
                 .build();
     }

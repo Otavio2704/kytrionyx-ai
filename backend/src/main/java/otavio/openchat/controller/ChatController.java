@@ -7,7 +7,6 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.multipart.MultipartFile;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
@@ -24,20 +23,6 @@ public class ChatController {
     private final OllamaService ollamaService;
     private final ConversationService conversationService;
 
-    /**
-     * POST /api/chat
-     * Envia mensagem para conversa existente com resposta em streaming (SSE).
-     *
-     * Payload:
-     * {
-     *   "conversationId": "uuid",
-     *   "message": "texto",
-     *   "model": "llama3.2",
-     *   "options": { "temperature": 0.7 },
-     *   "systemPrompt": "...",
-     *   "images": ["base64..."]   <- opcional, apenas para modelos com visão
-     * }
-     */
     @PostMapping(produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter chat(@RequestBody Map<String, Object> payload) {
         UUID   conversationId = UUID.fromString((String) payload.get("conversationId"));
@@ -53,18 +38,17 @@ public class ChatController {
         String projectIdStr = (String) payload.getOrDefault("projectId", null);
         UUID projectId = projectIdStr != null ? UUID.fromString(projectIdStr) : null;
 
+        // Web search RAG — booleano enviado pelo frontend quando o usuário ativa a busca
+        boolean webSearchEnabled = Boolean.TRUE.equals(payload.get("webSearch"));
+
         SseEmitter emitter = new SseEmitter(180_000L);
         conversationService.addMessage(conversationId, "user", userMessage);
         List<Message> history = conversationService.getMessages(conversationId);
-        ollamaService.streamChat(model, history, options, systemPrompt, images, projectId, emitter, conversationId);
+        ollamaService.streamChat(model, history, options, systemPrompt, images,
+                projectId, webSearchEnabled, emitter, conversationId);
         return emitter;
     }
 
-    /**
-     * POST /api/chat/new
-     * Cria nova conversa e envia primeira mensagem via SSE.
-     * Retorna o UUID no header X-Conversation-Id e no evento SSE "conversation-id".
-     */
     @PostMapping(value = "/new", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter newChat(@RequestBody Map<String, Object> payload) {
         String userMessage  = (String) payload.get("message");
@@ -79,8 +63,14 @@ public class ChatController {
         String projectIdStr = (String) payload.getOrDefault("projectId", null);
         UUID projectId = projectIdStr != null ? UUID.fromString(projectIdStr) : null;
 
+        boolean webSearchEnabled = Boolean.TRUE.equals(payload.get("webSearch"));
+
         String title          = userMessage.length() > 50 ? userMessage.substring(0, 50) : userMessage;
-        UUID   conversationId = conversationService.createConversation(title, model);
+
+        // Se há um projeto ativo, vincula a conversa a ele desde a criação
+        UUID conversationId = projectId != null
+                ? conversationService.createConversationForProject(title, model, projectId)
+                : conversationService.createConversation(title, model);
 
         conversationService.addMessage(conversationId, "user", userMessage);
         List<Message> history = conversationService.getMessages(conversationId);
@@ -95,7 +85,8 @@ public class ChatController {
             log.error("Erro ao enviar conversation-id via SSE", e);
         }
 
-        ollamaService.streamChat(model, history, options, systemPrompt, images, projectId, emitter, conversationId);
+        ollamaService.streamChat(model, history, options, systemPrompt, images,
+                projectId, webSearchEnabled, emitter, conversationId);
 
         return emitter;
     }

@@ -12,11 +12,10 @@ const state = {
   language:       '',
   thinkingMode:   false,
   capabilities:   null,
-  pendingFiles:   [],   // { name, type, base64 | text }
+  pendingFiles:   [],
   abortController:null,
-  activeProjectId: null,  // UUID do projeto ativo no contexto
+  activeProjectId: null,
   activeProjectName: '',
-
 };
 
 const $ = id => document.getElementById(id);
@@ -76,8 +75,6 @@ function initRefs() {
     memoryList:       $('memory-list'),
     accentSwatches:   $('accent-swatches'),
     customColorInput: $('custom-color-input'),
-    pinnedList:          $('pinned-list'),
-    pinnedEmpty:         $('pinned-empty'),
     projectsList:        $('projects-list'),
     projectsEmpty:       $('projects-empty'),
     btnNewProject:       $('btn-new-project'),
@@ -170,14 +167,12 @@ function applyAccent(color) {
    SIDEBAR COLLAPSE
 ════════════════════════════════════════════════════════════════ */
 function setupSectionToggles() {
-  ['pinned-section-label','recents-section-label','projects-section-label'].forEach(id => {
+  ['recents-section-label','projects-section-label'].forEach(id => {
     const label = $(id);
     if (!label) return;
     label.addEventListener('click', e => {
-      if (e.target.closest('.btn-section-add')) return; // não colapsa ao clicar no "+"
-      const targetId = id === 'pinned-section-label'   ? 'pinned-list'
-                     : id === 'recents-section-label'  ? 'history-list'
-                     : 'projects-list';
+      if (e.target.closest('.btn-section-add')) return;
+      const targetId = id === 'recents-section-label' ? 'history-list' : 'projects-list';
       const list = $(targetId);
       const collapsed = label.classList.toggle('collapsed');
       list.style.display = collapsed ? 'none' : '';
@@ -227,8 +222,6 @@ function updateModelTags(caps, modelName) {
   if (!el.modelTags) return;
   const tags = [];
   const name = (modelName || '').toLowerCase();
-
-  // Detecta tags pelo nome e pelas capabilities
   if (name.includes(':cloud') || name.includes('cloud'))
     tags.push('<span class="model-tag cloud">☁ Cloud</span>');
   if (caps?.supportsVision || name.includes('vision') || name.includes('llava'))
@@ -239,12 +232,10 @@ function updateModelTags(caps, modelName) {
     tags.push('<span class="model-tag embed">⊕ Embed</span>');
   if (name.includes('tools') || name.includes('tool'))
     tags.push('<span class="model-tag tools">🔧 Tools</span>');
-
   el.modelTags.innerHTML = tags.join('');
 }
 
 function applyCapabilitiesToUI(caps) {
-  // Thinking mode
   if (el.thinkingField) {
     const supported = caps?.supportsThinking ?? false;
     el.thinkingField.classList.toggle('disabled', !supported);
@@ -256,8 +247,6 @@ function applyCapabilitiesToUI(caps) {
     }
     el.thinkingField.title = supported ? '' : 'Este modelo não suporta Thinking Mode';
   }
-
-  // Botão de anexar: PDF/DOCX para todos, imagens só para Vision
   if (el.btnAttach) {
     el.btnAttach.disabled = false;
     const supportsVision = caps?.supportsVision ?? false;
@@ -268,8 +257,6 @@ function applyCapabilitiesToUI(caps) {
       ? 'Anexar arquivo ou imagem'
       : 'Anexar documento (PDF, DOCX, TXT, MD)';
   }
-
-  // Context length
   if (caps?.contextLength > 0 && el.ctxSlider) {
     el.ctxSlider.max = caps.contextLength;
     const cur = Math.min(parseInt(el.ctxSlider.value), caps.contextLength);
@@ -495,7 +482,7 @@ async function loadModels() {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   HISTÓRICO
+   HISTÓRICO — fixados integrados na lista de recentes
 ════════════════════════════════════════════════════════════════ */
 let allHistory = [];
 
@@ -510,16 +497,20 @@ async function loadHistory() {
 
 function buildHistoryItem(conv) {
   const item = document.createElement('div');
-  item.className = 'history-item' + (conv.id === state.conversationId ? ' active' : '');
+  item.className = 'history-item' + (conv.id === state.conversationId ? ' active' : '') + (conv.pinned ? ' pinned' : '');
   item.dataset.id = conv.id;
   const dateStr = formatDate(new Date(conv.updatedAt || conv.createdAt));
+
+  // Ícone de pin preenchido (fixado) ou outline (não fixado)
   const pinIcon = conv.pinned
-    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`
-    : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
+    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none" xmlns="http://www.w3.org/2000/svg"><path d="M16 2H8a1 1 0 0 0-.707 1.707L9 5.414V10l-2 2v2h6v5l1 1 1-1v-5h6v-2l-2-2V5.414l1.707-1.707A1 1 0 0 0 16 2z"/></svg>`
+    : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" xmlns="http://www.w3.org/2000/svg"><path d="M16 2H8a1 1 0 0 0-.707 1.707L9 5.414V10l-2 2v2h6v5l1 1 1-1v-5h6v-2l-2-2V5.414l1.707-1.707A1 1 0 0 0 16 2z"/></svg>`;
 
   item.innerHTML = `
     <div class="history-item-content">
-      <div class="history-item-title" title="${escapeHtml(conv.title)}">${escapeHtml(conv.title)}</div>
+      <div class="history-item-title" title="${escapeHtml(conv.title)}">
+        ${conv.pinned ? '<span class="pin-indicator" title="Fixado">📌</span>' : ''}${escapeHtml(conv.title)}
+      </div>
       <div class="history-item-meta"><span>${dateStr}</span><span class="history-item-model">${escapeHtml(conv.modelName || '')}</span></div>
     </div>
     <div class="history-item-actions">
@@ -537,7 +528,7 @@ function buildHistoryItem(conv) {
       </button>
     </div>
   `;
-  item.querySelector('.pin').addEventListener('click', e => { e.stopPropagation(); togglePin(conv.id, item); });
+  item.querySelector('.pin').addEventListener('click', e => { e.stopPropagation(); togglePin(conv.id); });
   item.querySelector('.rename').addEventListener('click', e => { e.stopPropagation(); openRename(conv.id, conv.title, item); });
   item.querySelector('.delete').addEventListener('click', e => { e.stopPropagation(); deleteConversation(conv.id, item); });
   item.addEventListener('click', () => loadConversation(conv.id));
@@ -545,26 +536,34 @@ function buildHistoryItem(conv) {
 }
 
 function renderHistory(items) {
+  el.historyList.innerHTML = '';
+
+  if (!items.length) {
+    el.historyList.appendChild(el.historyEmpty);
+    return;
+  }
+
+  // Fixados primeiro, depois recentes — tudo na mesma lista
   const pinned  = items.filter(c => c.pinned);
   const recents = items.filter(c => !c.pinned);
 
-  // Fixados
-  el.pinnedList.innerHTML = '';
   if (pinned.length) {
-    el.pinnedEmpty.hidden = true;
-    pinned.forEach(c => el.pinnedList.appendChild(buildHistoryItem(c)));
-  } else {
-    el.pinnedList.appendChild(el.pinnedEmpty);
-    el.pinnedEmpty.hidden = false;
+    // Separador visual sutil para os fixados
+    const sep = document.createElement('div');
+    sep.className = 'history-section-sep';
+    sep.textContent = 'Fixados';
+    el.historyList.appendChild(sep);
+    pinned.forEach(c => el.historyList.appendChild(buildHistoryItem(c)));
+
+    if (recents.length) {
+      const sep2 = document.createElement('div');
+      sep2.className = 'history-section-sep';
+      sep2.textContent = 'Recentes';
+      el.historyList.appendChild(sep2);
+    }
   }
 
-  // Recentes
-  el.historyList.innerHTML = '';
-  if (recents.length) {
-    recents.forEach(c => el.historyList.appendChild(buildHistoryItem(c)));
-  } else {
-    el.historyList.appendChild(el.historyEmpty);
-  }
+  recents.forEach(c => el.historyList.appendChild(buildHistoryItem(c)));
 }
 
 function filterHistory() {
@@ -605,7 +604,6 @@ function openRename(id, currentTitle, itemEl) {
         body: JSON.stringify({ title: newTitle }),
       });
       if (!res.ok) throw new Error();
-      // Atualiza UI sem recarregar tudo
       const titleEl = itemEl.querySelector('.history-item-title');
       if (titleEl) { titleEl.textContent = newTitle; titleEl.title = newTitle; }
       const hist = allHistory.find(c => c.id === id);
@@ -626,6 +624,11 @@ async function performDelete(id, itemEl) {
     if (!res.ok) throw new Error();
     allHistory = allHistory.filter(c => c.id !== id);
     itemEl.remove();
+    // Remove separadores órfãos
+    document.querySelectorAll('.history-section-sep').forEach(sep => {
+      const next = sep.nextElementSibling;
+      if (!next || next.classList.contains('history-section-sep')) sep.remove();
+    });
     if (!allHistory.length) el.historyList.appendChild(el.historyEmpty);
     if (state.conversationId === id) newConversation();
   } catch (err) { console.error('Erro ao deletar:', err); }
@@ -635,11 +638,11 @@ let _confirmCallback = null;
 function openConfirm(cb) {
   _confirmCallback = cb;
   el.confirmBackdrop.hidden = false;
-  el.confirmDelete.onclick = () => { 
-    const cb = _confirmCallback
-    closeConfirm(); 
+  el.confirmDelete.onclick = () => {
+    const cb = _confirmCallback;
+    closeConfirm();
     if (cb) cb();
-   };
+  };
 }
 function closeConfirm() { el.confirmBackdrop.hidden = true; _confirmCallback = null; }
 
@@ -683,12 +686,10 @@ async function sendMessage() {
   const isNew    = !state.conversationId;
   const endpoint = isNew ? `${API.BASE}/api/chat/new` : `${API.BASE}/api/chat`;
 
-  // Monta o payload — documentos viram contexto no texto, imagens vão como base64
   const images   = filesToSend.filter(f => f.type === 'image').map(f => f.data);
   const docTexts = filesToSend.filter(f => f.type === 'doc').map(f => `[Conteúdo de "${f.name}"]:\n${f.data}`).join('\n\n');
   const fullText = docTexts ? (text ? `${text}\n\n${docTexts}` : docTexts) : text;
 
-  // Injeta idioma no system prompt se configurado
   let finalSystemPrompt = state.systemPrompt || null;
   if (state.language) {
     const langInstruction = `Responda SEMPRE em ${state.language}.`;
@@ -739,8 +740,6 @@ async function sendMessage() {
           return;
         }
         if (evName === 'thinking') {
-          // Campo "thinking" separado (Kimi, DeepSeek, etc.)
-          // Só acumula se o usuário ativou o Thinking Mode
           if (state.thinkingMode) {
             thinkingText += data;
             renderStreaming(textEl, thinkingText, fullResponse);
@@ -749,9 +748,6 @@ async function sendMessage() {
           return;
         }
         if (evName === 'token' || evName === '') {
-          // Tokens normais de conteúdo — sempre acumula no fullResponse
-          // Ignora qualquer lógica de <think> inline pois o backend já
-          // separa thinking/content em eventos SSE distintos
           fullResponse += data;
           renderStreaming(textEl, state.thinkingMode ? thinkingText : '', fullResponse);
           scrollToBottom();
@@ -777,7 +773,6 @@ async function sendMessage() {
       if (pendingData !== null) { flushEvent(currentEvent, pendingData); pendingData = null; }
     }
 
-    // Garante render final
     if (textEl.querySelector('.streaming-cursor')) {
       cursorEl?.remove();
       renderFinal(textEl, thinkingText, fullResponse);
@@ -845,7 +840,6 @@ function appendMessage(role, rawContent, streaming, files = []) {
     : '';
   const rendered = content ? renderMarkdown(content) : '';
 
-  // Cards de arquivos anexados
   const docFiles = files.filter(f => f.type === 'doc');
   const imgFiles = files.filter(f => f.type === 'image');
   const attachHtml = [
@@ -904,7 +898,7 @@ async function showModelInfo() {
 /* ════════════════════════════════════════════════════════════════
    PIN
 ════════════════════════════════════════════════════════════════ */
-async function togglePin(id, itemEl) {
+async function togglePin(id) {
   try {
     const res  = await fetch(`${API.BASE}/api/history/${id}/pin`, { method: 'PATCH' });
     const data = await res.json();
@@ -919,7 +913,7 @@ async function togglePin(id, itemEl) {
 /* ════════════════════════════════════════════════════════════════
    PROJETOS — sidebar
 ════════════════════════════════════════════════════════════════ */
-let currentProjectId = null; // projeto aberto no modal
+let currentProjectId = null;
 
 async function loadProjects() {
   try {
@@ -940,11 +934,13 @@ function renderProjects(projects) {
     const item = document.createElement('div');
     item.className = 'project-item' + (proj.id === state.activeProjectId ? ' active' : '');
     item.dataset.id = proj.id;
+    // Usa files?.length se disponível (vem da listagem sem files, então usa 0)
+    const fileCount = proj.files ? proj.files.length : 0;
     item.innerHTML = `
       <span class="project-item-icon">📁</span>
       <div class="project-item-content">
         <div class="project-item-name" title="${escapeHtml(proj.name)}">${escapeHtml(proj.name)}</div>
-        <div class="project-item-count">${proj.files ? proj.files.length + ' arquivo(s)' : ''}</div>
+        <div class="project-item-count">${fileCount > 0 ? fileCount + ' arquivo(s)' : 'Sem arquivos'}</div>
       </div>
       <div class="history-item-actions">
         <button class="btn-history-action rename" title="Editar projeto">
@@ -1036,14 +1032,18 @@ async function saveProject() {
         body: JSON.stringify({ name, description: desc }),
       });
     } else {
-      await fetch(`${API.BASE}/api/projects`, {
+      const res = await fetch(`${API.BASE}/api/projects`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, description: desc }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     }
     closeProjectModal();
     await loadProjects();
-  } catch (err) { console.error('Erro ao salvar projeto:', err); }
+  } catch (err) {
+    console.error('Erro ao salvar projeto:', err);
+    alert('Erro ao salvar projeto. Verifique o console para detalhes.');
+  }
 }
 
 function renderProjectFiles(files) {
@@ -1056,7 +1056,9 @@ function renderProjectFiles(files) {
     const item = document.createElement('div');
     item.className = 'project-file-item';
     const icon = f.fileType === 'pdf' ? '📄' : f.fileType === 'docx' ? '📝' : f.fileType === 'text' ? '✏️' : '📃';
-    const size = f.content ? Math.round(f.content.length / 1024) + ' KB' : '';
+    // contentLength vem do DTO (em chars), converte para KB aproximado
+    const sizeKb = f.contentLength ? Math.round(f.contentLength / 1024) : 0;
+    const size = sizeKb > 0 ? sizeKb + ' KB' : '';
     item.innerHTML = `
       <span class="project-file-icon">${icon}</span>
       <span class="project-file-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
@@ -1081,7 +1083,6 @@ async function handleProjectFileUpload(e) {
     } catch (err) { console.error('Erro ao enviar arquivo:', err); }
   }
   e.target.value = '';
-  // Recarrega o modal
   const res   = await fetch(`${API.BASE}/api/projects/${currentProjectId}`);
   const proj  = await res.json();
   renderProjectFiles(proj.files || []);
@@ -1121,7 +1122,6 @@ function startProjectChat() {
   setProjectContext(currentProjectId, name);
   closeProjectModal();
   newConversation();
-  // Foca no input para o usuário começar a digitar
   setTimeout(() => el.messageInput.focus(), 100);
 }
 

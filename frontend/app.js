@@ -4,19 +4,19 @@
 const API = { BASE: 'http://localhost:8080' };
 
 const state = {
-  conversationId: null,
-  isStreaming:    false,
-  model:          '',
-  options:        {},
-  systemPrompt:   '',
-  language:       '',
-  thinkingMode:   false,
-  capabilities:   null,
-  pendingFiles:   [],   // { name, type, base64 | text }
-  abortController:null,
-  activeProjectId: null,  // UUID do projeto ativo no contexto
-  activeProjectName: '',
-
+  conversationId:   null,
+  isStreaming:      false,
+  model:            '',
+  options:          {},
+  systemPrompt:     '',
+  language:         '',
+  thinkingMode:     false,
+  webSearchEnabled: false,   // Web Search RAG
+  capabilities:     null,
+  pendingFiles:     [],
+  abortController:  null,
+  activeProjectId:  null,
+  activeProjectName:'',
 };
 
 const $ = id => document.getElementById(id);
@@ -24,90 +24,92 @@ let el = {};
 
 function initRefs() {
   el = {
-    sidebar:          $('sidebar'),
-    historyList:      $('history-list'),
-    historyEmpty:     $('history-empty'),
-    searchInput:      $('search-input'),
-    modelSelect:      $('model-select'),
-    modelTags:        $('model-tags'),
-    messagesArea:     $('messages-area'),
-    welcomeScreen:    $('welcome-screen'),
-    messageInput:     $('message-input'),
-    btnSend:          $('btn-send'),
-    iconSend:         $('icon-send'),
-    iconStop:         $('icon-stop'),
-    btnNewChat:       $('btn-new-chat'),
-    btnSettings:      $('btn-settings'),
-    btnTheme:         $('btn-theme'),
-    btnMemory:        $('btn-memory'),
+    sidebar:           $('sidebar'),
+    historyList:       $('history-list'),
+    historyEmpty:      $('history-empty'),
+    searchInput:       $('search-input'),
+    modelSelect:       $('model-select'),
+    modelTags:         $('model-tags'),
+    messagesArea:      $('messages-area'),
+    welcomeScreen:     $('welcome-screen'),
+    messageInput:      $('message-input'),
+    btnSend:           $('btn-send'),
+    iconSend:          $('icon-send'),
+    iconStop:          $('icon-stop'),
+    btnNewChat:        $('btn-new-chat'),
+    btnSettings:       $('btn-settings'),
+    btnTheme:          $('btn-theme'),
+    btnMemory:         $('btn-memory'),
     btnSidebarCollapse:$('btn-sidebar-collapse'),
-    collapseIcon:     $('collapse-icon'),
-    settingsPanel:    $('settings-panel'),
-    btnModelInfo:     $('btn-model-info'),
-    charCount:        $('char-count'),
-    statusDot:        $('status-dot'),
-    statusText:       $('status-text'),
-    btnToggle:        $('btn-toggle-sidebar'),
-    tempSlider:       $('param-temperature'),
-    tempValue:        $('temperature-value'),
-    ctxSlider:        $('param-ctx'),
-    ctxValue:         $('ctx-value'),
-    systemPrompt:     $('param-system'),
-    languageSelect:   $('param-language'),
-    thinkingChk:      $('param-thinking'),
-    thinkingField:    $('thinking-field'),
-    modalBackdrop:    $('modal-backdrop'),
-    modalTitle:       $('modal-title'),
-    modalBody:        $('modal-body'),
-    modalClose:       $('modal-close'),
-    confirmBackdrop:  $('confirm-backdrop'),
-    confirmDelete:    $('confirm-delete'),
-    confirmCancel:    $('confirm-cancel'),
-    renameBackdrop:   $('rename-backdrop'),
-    renameInput:      $('rename-input'),
-    renameConfirm:    $('rename-confirm'),
-    renameCancel:     $('rename-cancel'),
-    renameClose:      $('rename-close'),
-    memoryBackdrop:   $('memory-backdrop'),
-    memoryModalClose: $('memory-modal-close'),
-    memoryInput:      $('memory-input'),
-    memoryCategory:   $('memory-category'),
-    btnMemoryAdd:     $('btn-memory-add'),
-    memoryList:       $('memory-list'),
-    accentSwatches:   $('accent-swatches'),
-    customColorInput: $('custom-color-input'),
-    pinnedList:          $('pinned-list'),
-    pinnedEmpty:         $('pinned-empty'),
-    projectsList:        $('projects-list'),
-    projectsEmpty:       $('projects-empty'),
-    btnNewProject:       $('btn-new-project'),
-    projectBackdrop:     $('project-backdrop'),
-    projectModalTitle:   $('project-modal-title'),
-    projectModalClose:   $('project-modal-close'),
-    projectModalBody:    $('project-modal-body'),
-    projectFormSection:  $('project-form-section'),
-    projectDetailSection:$('project-detail-section'),
-    projectNameInput:    $('project-name-input'),
-    projectDescInput:    $('project-desc-input'),
-    projectFormCancel:   $('project-form-cancel'),
-    projectFormSave:     $('project-form-save'),
-    projectDetailDesc:   $('project-detail-desc'),
-    projectFilesList:    $('project-files-list'),
-    btnProjectAddFile:   $('btn-project-add-file'),
-    btnProjectAddText:   $('btn-project-add-text'),
-    projectFileInput:    $('project-file-input'),
-    projectTextAdd:      $('project-text-add'),
-    projectTextName:     $('project-text-name'),
-    projectTextContent:  $('project-text-content'),
-    projectTextCancel:   $('project-text-cancel'),
-    projectTextSave:     $('project-text-save'),
-    btnProjectNewChat:   $('btn-project-new-chat'),
-    projectContextBadge: $('project-context-badge'),
-    projectContextName:  $('project-context-name'),
-    btnClearProject:     $('btn-clear-project'),
-    btnAttach:           $('btn-attach'),
-    fileInput:        $('file-input'),
-    attachPreview:    $('attach-preview'),
+    collapseIcon:      $('collapse-icon'),
+    settingsPanel:     $('settings-panel'),
+    btnModelInfo:      $('btn-model-info'),
+    charCount:         $('char-count'),
+    statusDot:         $('status-dot'),
+    statusText:        $('status-text'),
+    btnToggle:         $('btn-toggle-sidebar'),
+    tempSlider:        $('param-temperature'),
+    tempValue:         $('temperature-value'),
+    ctxSlider:         $('param-ctx'),
+    ctxValue:          $('ctx-value'),
+    systemPrompt:      $('param-system'),
+    languageSelect:    $('param-language'),
+    thinkingChk:       $('param-thinking'),
+    thinkingField:     $('thinking-field'),
+    modalBackdrop:     $('modal-backdrop'),
+    modalTitle:        $('modal-title'),
+    modalBody:         $('modal-body'),
+    modalClose:        $('modal-close'),
+    confirmBackdrop:   $('confirm-backdrop'),
+    confirmDelete:     $('confirm-delete'),
+    confirmCancel:     $('confirm-cancel'),
+    renameBackdrop:    $('rename-backdrop'),
+    renameInput:       $('rename-input'),
+    renameConfirm:     $('rename-confirm'),
+    renameCancel:      $('rename-cancel'),
+    renameClose:       $('rename-close'),
+    memoryBackdrop:    $('memory-backdrop'),
+    memoryModalClose:  $('memory-modal-close'),
+    memoryInput:       $('memory-input'),
+    memoryCategory:    $('memory-category'),
+    btnMemoryAdd:      $('btn-memory-add'),
+    memoryList:        $('memory-list'),
+    accentSwatches:    $('accent-swatches'),
+    customColorInput:  $('custom-color-input'),
+    projectsList:         $('projects-list'),
+    projectsEmpty:        $('projects-empty'),
+    btnNewProject:        $('btn-new-project'),
+    projectBackdrop:      $('project-backdrop'),
+    projectModalTitle:    $('project-modal-title'),
+    projectModalClose:    $('project-modal-close'),
+    projectModalBody:     $('project-modal-body'),
+    projectFormSection:   $('project-form-section'),
+    projectDetailSection: $('project-detail-section'),
+    projectNameInput:     $('project-name-input'),
+    projectDescInput:     $('project-desc-input'),
+    projectFormCancel:    $('project-form-cancel'),
+    projectFormSave:      $('project-form-save'),
+    projectDetailDesc:    $('project-detail-desc'),
+    projectFilesList:     $('project-files-list'),
+    btnProjectAddFile:    $('btn-project-add-file'),
+    btnProjectAddText:    $('btn-project-add-text'),
+    projectFileInput:     $('project-file-input'),
+    projectTextAdd:       $('project-text-add'),
+    projectTextName:      $('project-text-name'),
+    projectTextContent:   $('project-text-content'),
+    projectTextCancel:    $('project-text-cancel'),
+    projectTextSave:      $('project-text-save'),
+    btnProjectNewChat:    $('btn-project-new-chat'),
+    btnProjectDelete:     $('btn-project-delete'),
+    projectChatsSection:  $('project-chats-section'),
+    projectChatsList:     $('project-chats-list'),
+    projectContextBadge:  $('project-context-badge'),
+    projectContextName:   $('project-context-name'),
+    btnClearProject:      $('btn-clear-project'),
+    btnAttach:            $('btn-attach'),
+    btnWebSearch:         $('btn-web-search'),
+    fileInput:            $('file-input'),
+    attachPreview:        $('attach-preview'),
   };
 }
 
@@ -130,9 +132,8 @@ function configureMarked() {
     let language = lang && hljs.getLanguage(lang) ? lang : null;
     const result = language ? hljs.highlight(codeText, { language }) : hljs.highlightAuto(codeText);
     language = language || result.language || 'plaintext';
-    const highlighted = result.value;
     const ll = language.toLowerCase();
-    return `<pre><div class="code-header"><span class="code-lang">${ll}</span><button class="btn-copy-code" onclick="copyCode(this)">Copiar</button></div><code class="hljs language-${ll}">${highlighted}</code></pre>`;
+    return `<pre><div class="code-header"><span class="code-lang">${ll}</span><button class="btn-copy-code" onclick="copyCode(this)">Copiar</button></div><code class="hljs language-${ll}">${result.value}</code></pre>`;
   };
   marked.use({ renderer, breaks: true, gfm: true });
 }
@@ -167,17 +168,15 @@ function applyAccent(color) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   SIDEBAR COLLAPSE
+   SIDEBAR
 ════════════════════════════════════════════════════════════════ */
 function setupSectionToggles() {
-  ['pinned-section-label','recents-section-label','projects-section-label'].forEach(id => {
+  ['recents-section-label', 'projects-section-label'].forEach(id => {
     const label = $(id);
     if (!label) return;
     label.addEventListener('click', e => {
-      if (e.target.closest('.btn-section-add')) return; // não colapsa ao clicar no "+"
-      const targetId = id === 'pinned-section-label'   ? 'pinned-list'
-                     : id === 'recents-section-label'  ? 'history-list'
-                     : 'projects-list';
+      if (e.target.closest('.btn-section-add')) return;
+      const targetId = id === 'recents-section-label' ? 'history-list' : 'projects-list';
       const list = $(targetId);
       const collapsed = label.classList.toggle('collapsed');
       list.style.display = collapsed ? 'none' : '';
@@ -188,10 +187,8 @@ function setupSectionToggles() {
 function setupSidebarCollapse() {
   const collapsed = localStorage.getItem('oc-sidebar-collapsed') === 'true';
   if (collapsed) applySidebarCollapse(true, false);
-
   el.btnSidebarCollapse.addEventListener('click', () => {
-    const isCollapsed = el.sidebar.classList.contains('collapsed');
-    applySidebarCollapse(!isCollapsed);
+    applySidebarCollapse(!el.sidebar.classList.contains('collapsed'));
   });
 }
 
@@ -204,7 +201,7 @@ function applySidebarCollapse(collapse, animate = true) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   CAPABILITIES & TAGS
+   CAPABILITIES
 ════════════════════════════════════════════════════════════════ */
 async function loadCapabilities(modelName) {
   if (!modelName) return;
@@ -227,8 +224,6 @@ function updateModelTags(caps, modelName) {
   if (!el.modelTags) return;
   const tags = [];
   const name = (modelName || '').toLowerCase();
-
-  // Detecta tags pelo nome e pelas capabilities
   if (name.includes(':cloud') || name.includes('cloud'))
     tags.push('<span class="model-tag cloud">☁ Cloud</span>');
   if (caps?.supportsVision || name.includes('vision') || name.includes('llava'))
@@ -239,43 +234,27 @@ function updateModelTags(caps, modelName) {
     tags.push('<span class="model-tag embed">⊕ Embed</span>');
   if (name.includes('tools') || name.includes('tool'))
     tags.push('<span class="model-tag tools">🔧 Tools</span>');
-
   el.modelTags.innerHTML = tags.join('');
 }
 
 function applyCapabilitiesToUI(caps) {
-  // Thinking mode
   if (el.thinkingField) {
     const supported = caps?.supportsThinking ?? false;
     el.thinkingField.classList.toggle('disabled', !supported);
     el.thinkingChk.disabled = !supported;
-    if (!supported) {
-      el.thinkingChk.checked = false;
-      state.thinkingMode = false;
-      delete state.options.think;
-    }
+    if (!supported) { el.thinkingChk.checked = false; state.thinkingMode = false; delete state.options.think; }
     el.thinkingField.title = supported ? '' : 'Este modelo não suporta Thinking Mode';
   }
-
-  // Botão de anexar: PDF/DOCX para todos, imagens só para Vision
   if (el.btnAttach) {
     el.btnAttach.disabled = false;
-    const supportsVision = caps?.supportsVision ?? false;
-    el.fileInput.accept = supportsVision
-      ? '.pdf,.docx,.txt,.md,image/jpeg,image/png,image/webp,image/gif'
-      : '.pdf,.docx,.txt,.md';
-    el.btnAttach.title = supportsVision
-      ? 'Anexar arquivo ou imagem'
-      : 'Anexar documento (PDF, DOCX, TXT, MD)';
+    const sv = caps?.supportsVision ?? false;
+    el.fileInput.accept = sv ? '.pdf,.docx,.txt,.md,image/jpeg,image/png,image/webp,image/gif' : '.pdf,.docx,.txt,.md';
+    el.btnAttach.title = sv ? 'Anexar arquivo ou imagem' : 'Anexar documento (PDF, DOCX, TXT, MD)';
   }
-
-  // Context length
   if (caps?.contextLength > 0 && el.ctxSlider) {
     el.ctxSlider.max = caps.contextLength;
     const cur = Math.min(parseInt(el.ctxSlider.value), caps.contextLength);
-    el.ctxSlider.value = cur;
-    el.ctxValue.textContent = cur;
-    state.options.num_ctx = cur;
+    el.ctxSlider.value = cur; el.ctxValue.textContent = cur; state.options.num_ctx = cur;
   }
 }
 
@@ -285,10 +264,7 @@ function applyCapabilitiesToUI(caps) {
 function setupEventListeners() {
   setupSidebarCollapse();
 
-  el.btnSend.addEventListener('click', () => {
-    if (state.isStreaming) stopStreaming();
-    else sendMessage();
-  });
+  el.btnSend.addEventListener('click', () => { if (state.isStreaming) stopStreaming(); else sendMessage(); });
   el.messageInput.addEventListener('keydown', e => {
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); if (!state.isStreaming) sendMessage(); }
   });
@@ -306,7 +282,8 @@ function setupEventListeners() {
     el.settingsPanel.hidden = !el.settingsPanel.hidden;
     el.btnSettings.classList.toggle('active', !el.settingsPanel.hidden);
   });
-  el.btnTheme.addEventListener('click', () => applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
+  el.btnTheme.addEventListener('click', () =>
+    applyTheme(document.documentElement.getAttribute('data-theme') === 'dark' ? 'light' : 'dark'));
 
   el.accentSwatches.addEventListener('click', e => {
     const s = e.target.closest('.swatch');
@@ -325,12 +302,20 @@ function setupEventListeners() {
     state.thinkingMode = el.thinkingChk.checked;
     if (state.thinkingMode) state.options.think = true; else delete state.options.think;
   });
-
   el.modelSelect.addEventListener('change', () => {
     state.model = el.modelSelect.value;
-    state.pendingFiles = [];
-    clearAttachPreview();
+    state.pendingFiles = []; clearAttachPreview();
     loadCapabilities(state.model);
+  });
+
+  // Web Search toggle
+  el.btnWebSearch.addEventListener('click', () => {
+    state.webSearchEnabled = !state.webSearchEnabled;
+    el.btnWebSearch.classList.toggle('active', state.webSearchEnabled);
+    el.btnWebSearch.setAttribute('aria-pressed', state.webSearchEnabled);
+    el.btnWebSearch.title = state.webSearchEnabled
+      ? 'Busca web ativa — clique para desativar'
+      : 'Ativar busca web (RAG)';
   });
 
   el.btnAttach.addEventListener('click', () => el.fileInput.click());
@@ -367,11 +352,14 @@ function setupEventListeners() {
   el.projectTextCancel.addEventListener('click', () => { el.projectTextAdd.hidden = true; });
   el.projectTextSave.addEventListener('click', saveProjectText);
   el.btnProjectNewChat.addEventListener('click', startProjectChat);
+  el.btnProjectDelete.addEventListener('click', handleDeleteCurrentProject);
   el.btnClearProject.addEventListener('click', clearProjectContext);
 
   el.searchInput.addEventListener('input', filterHistory);
   document.querySelectorAll('.suggestion-chip').forEach(btn => {
-    btn.addEventListener('click', () => { el.messageInput.value = btn.dataset.prompt; updateCharCount(); el.messageInput.focus(); });
+    btn.addEventListener('click', () => {
+      el.messageInput.value = btn.dataset.prompt; updateCharCount(); el.messageInput.focus();
+    });
   });
 }
 
@@ -385,8 +373,8 @@ function stopStreaming() {
 
 function setStreamingUI(streaming) {
   state.isStreaming = streaming;
-  el.iconSend.style.display  = streaming ? 'none' : '';
-  el.iconStop.style.display  = streaming ? ''     : 'none';
+  el.iconSend.style.display = streaming ? 'none' : '';
+  el.iconStop.style.display = streaming ? '' : 'none';
   el.btnSend.classList.toggle('stopping', streaming);
 }
 
@@ -396,13 +384,11 @@ function setStreamingUI(streaming) {
 async function handleFileSelect(e) {
   const files = Array.from(e.target.files);
   if (!files.length) return;
-  const supportsVision = state.capabilities?.supportsVision ?? false;
-
+  const sv = state.capabilities?.supportsVision ?? false;
   for (const file of files) {
     const ext = file.name.split('.').pop().toLowerCase();
     const isImage = ['jpg','jpeg','png','webp','gif'].includes(ext);
-
-    if (isImage && supportsVision) {
+    if (isImage && sv) {
       const b64full = await fileToBase64(file);
       const b64pure = b64full.includes(',') ? b64full.split(',')[1] : b64full;
       state.pendingFiles.push({ name: file.name, type: 'image', data: b64pure });
@@ -410,18 +396,16 @@ async function handleFileSelect(e) {
     } else if (['pdf','docx','txt','md'].includes(ext)) {
       addAttachPreview(file.name, 'doc', null);
       const text = await extractFileText(file, ext);
-      if (text) {
-        state.pendingFiles.push({ name: file.name, type: 'doc', data: text });
-      }
-    } else {
-      alert(`Tipo de arquivo não suportado: .${ext}`);
-    }
+      if (text) state.pendingFiles.push({ name: file.name, type: 'doc', data: text });
+    } else { alert(`Tipo de arquivo não suportado: .${ext}`); }
   }
   e.target.value = '';
 }
 
 function fileToBase64(file) {
-  return new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file); });
+  return new Promise((res, rej) => {
+    const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; r.readAsDataURL(file);
+  });
 }
 
 async function extractFileText(file, ext) {
@@ -435,7 +419,7 @@ async function extractFileText(file, ext) {
     return data.text || '';
   } catch (err) {
     console.error('Erro ao extrair texto:', err);
-    alert('Não foi possível extrair o texto do arquivo. Verifique se o servidor está rodando.');
+    alert('Não foi possível extrair o texto do arquivo.');
     return null;
   }
 }
@@ -476,8 +460,7 @@ async function loadModels() {
     el.modelSelect.innerHTML = '';
     if (!models.length) {
       el.modelSelect.innerHTML = '<option value="">Nenhum modelo encontrado</option>';
-      setStatus(false, 'Nenhum modelo instalado');
-      return;
+      setStatus(false, 'Nenhum modelo instalado'); return;
     }
     models.forEach(m => {
       const opt = document.createElement('option');
@@ -510,17 +493,22 @@ async function loadHistory() {
 
 function buildHistoryItem(conv) {
   const item = document.createElement('div');
-  item.className = 'history-item' + (conv.id === state.conversationId ? ' active' : '');
+  item.className = 'history-item' + (conv.id === state.conversationId ? ' active' : '') + (conv.pinned ? ' pinned' : '');
   item.dataset.id = conv.id;
   const dateStr = formatDate(new Date(conv.updatedAt || conv.createdAt));
   const pinIcon = conv.pinned
-    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor" stroke="none"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`
-    : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2C8.13 2 5 5.13 5 9c0 5.25 7 13 7 13s7-7.75 7-13c0-3.87-3.13-7-7-7zm0 9.5c-1.38 0-2.5-1.12-2.5-2.5s1.12-2.5 2.5-2.5 2.5 1.12 2.5 2.5-1.12 2.5-2.5 2.5z"/></svg>`;
+    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="currentColor"><path d="M16 2H8a1 1 0 0 0-.707 1.707L9 5.414V10l-2 2v2h6v5l1 1 1-1v-5h6v-2l-2-2V5.414l1.707-1.707A1 1 0 0 0 16 2z"/></svg>`
+    : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M16 2H8a1 1 0 0 0-.707 1.707L9 5.414V10l-2 2v2h6v5l1 1 1-1v-5h6v-2l-2-2V5.414l1.707-1.707A1 1 0 0 0 16 2z"/></svg>`;
 
   item.innerHTML = `
     <div class="history-item-content">
-      <div class="history-item-title" title="${escapeHtml(conv.title)}">${escapeHtml(conv.title)}</div>
-      <div class="history-item-meta"><span>${dateStr}</span><span class="history-item-model">${escapeHtml(conv.modelName || '')}</span></div>
+      <div class="history-item-title" title="${escapeHtml(conv.title)}">
+        ${conv.pinned ? '<span class="pin-indicator">📌</span>' : ''}${escapeHtml(conv.title)}
+      </div>
+      <div class="history-item-meta">
+        <span>${dateStr}</span>
+        <span class="history-item-model">${escapeHtml(conv.modelName || '')}</span>
+      </div>
     </div>
     <div class="history-item-actions">
       <button class="btn-history-action pin ${conv.pinned ? 'pinned' : ''}" title="${conv.pinned ? 'Desafixar' : 'Fixar'}">${pinIcon}</button>
@@ -532,12 +520,13 @@ function buildHistoryItem(conv) {
       </button>
       <button class="btn-history-action delete" title="Deletar">
         <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+          <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+          <path d="M10 11v6M14 11v6"/>
         </svg>
       </button>
     </div>
   `;
-  item.querySelector('.pin').addEventListener('click', e => { e.stopPropagation(); togglePin(conv.id, item); });
+  item.querySelector('.pin').addEventListener('click', e => { e.stopPropagation(); togglePin(conv.id); });
   item.querySelector('.rename').addEventListener('click', e => { e.stopPropagation(); openRename(conv.id, conv.title, item); });
   item.querySelector('.delete').addEventListener('click', e => { e.stopPropagation(); deleteConversation(conv.id, item); });
   item.addEventListener('click', () => loadConversation(conv.id));
@@ -545,26 +534,24 @@ function buildHistoryItem(conv) {
 }
 
 function renderHistory(items) {
+  el.historyList.innerHTML = '';
+  if (!items.length) { el.historyList.appendChild(el.historyEmpty); return; }
+
   const pinned  = items.filter(c => c.pinned);
   const recents = items.filter(c => !c.pinned);
 
-  // Fixados
-  el.pinnedList.innerHTML = '';
   if (pinned.length) {
-    el.pinnedEmpty.hidden = true;
-    pinned.forEach(c => el.pinnedList.appendChild(buildHistoryItem(c)));
-  } else {
-    el.pinnedList.appendChild(el.pinnedEmpty);
-    el.pinnedEmpty.hidden = false;
+    const sep = document.createElement('div');
+    sep.className = 'history-section-sep'; sep.textContent = 'Fixados';
+    el.historyList.appendChild(sep);
+    pinned.forEach(c => el.historyList.appendChild(buildHistoryItem(c)));
+    if (recents.length) {
+      const sep2 = document.createElement('div');
+      sep2.className = 'history-section-sep'; sep2.textContent = 'Recentes';
+      el.historyList.appendChild(sep2);
+    }
   }
-
-  // Recentes
-  el.historyList.innerHTML = '';
-  if (recents.length) {
-    recents.forEach(c => el.historyList.appendChild(buildHistoryItem(c)));
-  } else {
-    el.historyList.appendChild(el.historyEmpty);
-  }
+  recents.forEach(c => el.historyList.appendChild(buildHistoryItem(c)));
 }
 
 function filterHistory() {
@@ -595,7 +582,6 @@ function openRename(id, currentTitle, itemEl) {
   el.renameInput.value = currentTitle;
   el.renameBackdrop.hidden = false;
   setTimeout(() => { el.renameInput.focus(); el.renameInput.select(); }, 50);
-
   el.renameConfirm.onclick = async () => {
     const newTitle = el.renameInput.value.trim();
     if (!newTitle) return;
@@ -605,7 +591,6 @@ function openRename(id, currentTitle, itemEl) {
         body: JSON.stringify({ title: newTitle }),
       });
       if (!res.ok) throw new Error();
-      // Atualiza UI sem recarregar tudo
       const titleEl = itemEl.querySelector('.history-item-title');
       if (titleEl) { titleEl.textContent = newTitle; titleEl.title = newTitle; }
       const hist = allHistory.find(c => c.id === id);
@@ -614,18 +599,20 @@ function openRename(id, currentTitle, itemEl) {
     } catch { alert('Erro ao renomear conversa.'); }
   };
 }
-
 function closeRename() { el.renameBackdrop.hidden = true; _renameTarget = null; }
 
-/* ── Delete ─── */
+/* ── Delete conversa ─── */
 function deleteConversation(id, itemEl) { openConfirm(() => performDelete(id, itemEl)); }
-
 async function performDelete(id, itemEl) {
   try {
     const res = await fetch(`${API.BASE}/api/history/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error();
     allHistory = allHistory.filter(c => c.id !== id);
     itemEl.remove();
+    document.querySelectorAll('.history-section-sep').forEach(sep => {
+      const next = sep.nextElementSibling;
+      if (!next || next.classList.contains('history-section-sep')) sep.remove();
+    });
     if (!allHistory.length) el.historyList.appendChild(el.historyEmpty);
     if (state.conversationId === id) newConversation();
   } catch (err) { console.error('Erro ao deletar:', err); }
@@ -635,11 +622,7 @@ let _confirmCallback = null;
 function openConfirm(cb) {
   _confirmCallback = cb;
   el.confirmBackdrop.hidden = false;
-  el.confirmDelete.onclick = () => { 
-    const cb = _confirmCallback
-    closeConfirm(); 
-    if (cb) cb();
-   };
+  el.confirmDelete.onclick = () => { const cb = _confirmCallback; closeConfirm(); if (cb) cb(); };
 }
 function closeConfirm() { el.confirmBackdrop.hidden = true; _confirmCallback = null; }
 
@@ -683,28 +666,26 @@ async function sendMessage() {
   const isNew    = !state.conversationId;
   const endpoint = isNew ? `${API.BASE}/api/chat/new` : `${API.BASE}/api/chat`;
 
-  // Monta o payload — documentos viram contexto no texto, imagens vão como base64
   const images   = filesToSend.filter(f => f.type === 'image').map(f => f.data);
   const docTexts = filesToSend.filter(f => f.type === 'doc').map(f => `[Conteúdo de "${f.name}"]:\n${f.data}`).join('\n\n');
   const fullText = docTexts ? (text ? `${text}\n\n${docTexts}` : docTexts) : text;
 
-  // Injeta idioma no system prompt se configurado
   let finalSystemPrompt = state.systemPrompt || null;
   if (state.language) {
-    const langInstruction = `Responda SEMPRE em ${state.language}.`;
-    finalSystemPrompt = finalSystemPrompt ? `${langInstruction}\n\n${finalSystemPrompt}` : langInstruction;
+    const li = `Responda SEMPRE em ${state.language}.`;
+    finalSystemPrompt = finalSystemPrompt ? `${li}\n\n${finalSystemPrompt}` : li;
   }
 
   const body = {
     message: fullText, model: state.model,
     options: state.options, systemPrompt: finalSystemPrompt,
-    images,
+    images, webSearch: state.webSearchEnabled,
     ...(state.activeProjectId && { projectId: state.activeProjectId }),
     ...(!isNew && { conversationId: state.conversationId }),
   };
 
-  let fullResponse = '';
-  let thinkingText = '';
+  let fullResponse = '', thinkingText = '';
+  let searchBanner = null;
 
   try {
     const response = await fetch(endpoint, {
@@ -727,20 +708,36 @@ async function sendMessage() {
 
       const flushEvent = (evName, data) => {
         if (evName === 'conversation-id') { state.conversationId = data.trim(); return; }
+
+        // Web search status
+        if (evName === 'search-start') {
+          searchBanner = document.createElement('div');
+          searchBanner.className = 'search-status-banner';
+          searchBanner.innerHTML = `<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg> Buscando na web...`;
+          el.messagesArea.insertBefore(searchBanner, assistantEl);
+          el.btnWebSearch.classList.add('searching');
+          return;
+        }
+        if (evName === 'search-done') {
+          if (searchBanner) {
+            searchBanner.classList.add('done');
+            setTimeout(() => searchBanner?.remove(), 600);
+            searchBanner = null;
+          }
+          el.btnWebSearch.classList.remove('searching');
+          return;
+        }
+
         if (evName === 'done' || data.trim() === '[DONE]') {
           cursorEl?.remove();
           renderFinal(textEl, thinkingText, fullResponse);
-          scrollToBottom();
-          return;
+          scrollToBottom(); return;
         }
         if (evName === 'error') {
           textEl.innerHTML = `<span style="color:var(--danger)">Erro: ${escapeHtml(data.trim())}</span>`;
-          cursorEl?.remove();
-          return;
+          cursorEl?.remove(); return;
         }
         if (evName === 'thinking') {
-          // Campo "thinking" separado (Kimi, DeepSeek, etc.)
-          // Só acumula se o usuário ativou o Thinking Mode
           if (state.thinkingMode) {
             thinkingText += data;
             renderStreaming(textEl, thinkingText, fullResponse);
@@ -749,9 +746,6 @@ async function sendMessage() {
           return;
         }
         if (evName === 'token' || evName === '') {
-          // Tokens normais de conteúdo — sempre acumula no fullResponse
-          // Ignora qualquer lógica de <think> inline pois o backend já
-          // separa thinking/content em eventos SSE distintos
           fullResponse += data;
           renderStreaming(textEl, state.thinkingMode ? thinkingText : '', fullResponse);
           scrollToBottom();
@@ -777,13 +771,13 @@ async function sendMessage() {
       if (pendingData !== null) { flushEvent(currentEvent, pendingData); pendingData = null; }
     }
 
-    // Garante render final
     if (textEl.querySelector('.streaming-cursor')) {
       cursorEl?.remove();
       renderFinal(textEl, thinkingText, fullResponse);
     }
-
   } catch (err) {
+    searchBanner?.remove();
+    el.btnWebSearch.classList.remove('searching');
     if (err.name === 'AbortError') {
       cursorEl?.remove();
       if (fullResponse) renderFinal(textEl, thinkingText, fullResponse);
@@ -806,10 +800,8 @@ async function sendMessage() {
 ════════════════════════════════════════════════════════════════ */
 function parseStoredMessage(raw) {
   if (!raw) return { thinking: '', content: '' };
-  const openTag  = '<thinking>';
-  const closeTag = '</thinking>\n\n';
-  const start = raw.indexOf(openTag);
-  const end   = raw.indexOf(closeTag);
+  const openTag = '<thinking>', closeTag = '</thinking>\n\n';
+  const start = raw.indexOf(openTag), end = raw.indexOf(closeTag);
   if (start === 0 && end !== -1) {
     return { thinking: raw.slice(openTag.length, end), content: raw.slice(end + closeTag.length) };
   }
@@ -834,18 +826,16 @@ function renderFinal(textEl, thinking, content) {
 }
 
 function appendMessage(role, rawContent, streaming, files = []) {
-  const msg         = document.createElement('div');
-  msg.className     = `message ${role}`;
+  const msg = document.createElement('div');
+  msg.className = `message ${role}`;
   const avatarLabel = role === 'user' ? 'Eu' : '⬡';
   const roleLabel   = role === 'user' ? 'Você' : 'Assistente';
 
   const { thinking, content } = parseStoredMessage(rawContent || '');
   const thinkHtml = thinking
-    ? `<details class="thinking-block"><summary>Pensamento</summary><p>${escapeHtml(thinking)}</p></details>`
-    : '';
+    ? `<details class="thinking-block"><summary>Pensamento</summary><p>${escapeHtml(thinking)}</p></details>` : '';
   const rendered = content ? renderMarkdown(content) : '';
 
-  // Cards de arquivos anexados
   const docFiles = files.filter(f => f.type === 'doc');
   const imgFiles = files.filter(f => f.type === 'image');
   const attachHtml = [
@@ -880,8 +870,8 @@ function renderMarkdown(text) {
 async function showModelInfo() {
   if (!state.model) return;
   el.modalTitle.textContent = state.model;
-  el.modalBody.innerHTML    = '<div class="spinner"></div>';
-  el.modalBackdrop.hidden   = false;
+  el.modalBody.innerHTML = '<div class="spinner"></div>';
+  el.modalBackdrop.hidden = false;
   try {
     const res  = await fetch(`${API.BASE}/api/models/${encodeURIComponent(state.model)}/info`);
     if (!res.ok) throw new Error();
@@ -889,9 +879,9 @@ async function showModelInfo() {
     const caps = state.capabilities;
     const rows = [
       ['Modelo',      data.modelfile?.split('\n')[0] || state.model],
-      ['Parâmetros',  data.details?.parameter_size        || '—'],
-      ['Quantização', data.details?.quantization_level    || '—'],
-      ['Família',     data.details?.family                || '—'],
+      ['Parâmetros',  data.details?.parameter_size || '—'],
+      ['Quantização', data.details?.quantization_level || '—'],
+      ['Família',     data.details?.family || '—'],
       ['Contexto',    caps?.contextLength > 0 ? caps.contextLength.toLocaleString() + ' tokens' : '—'],
       ['Thinking',    caps?.supportsThinking ? '✅ Sim' : '❌ Não'],
       ['Vision',      caps?.supportsVision   ? '✅ Sim' : '❌ Não'],
@@ -904,38 +894,33 @@ async function showModelInfo() {
 /* ════════════════════════════════════════════════════════════════
    PIN
 ════════════════════════════════════════════════════════════════ */
-async function togglePin(id, itemEl) {
+async function togglePin(id) {
   try {
     const res  = await fetch(`${API.BASE}/api/history/${id}/pin`, { method: 'PATCH' });
     const data = await res.json();
     if (!data.success && data.reason === 'limit_reached') {
-      alert('Máximo de 3 chats fixados atingido. Desafixe um antes de fixar outro.');
-      return;
+      alert('Máximo de 3 chats fixados atingido.'); return;
     }
     await loadHistory();
   } catch (err) { console.error('Erro ao fixar conversa:', err); }
 }
 
 /* ════════════════════════════════════════════════════════════════
-   PROJETOS — sidebar
+   PROJETOS
 ════════════════════════════════════════════════════════════════ */
-let currentProjectId = null; // projeto aberto no modal
+let currentProjectId = null;
 
 async function loadProjects() {
   try {
-    const res      = await fetch(`${API.BASE}/api/projects`);
+    const res = await fetch(`${API.BASE}/api/projects`);
     if (!res.ok) return;
-    const projects = await res.json();
-    renderProjects(projects);
+    renderProjects(await res.json());
   } catch (err) { console.error('Erro ao carregar projetos:', err); }
 }
 
 function renderProjects(projects) {
   el.projectsList.innerHTML = '';
-  if (!projects.length) {
-    el.projectsList.appendChild(el.projectsEmpty);
-    return;
-  }
+  if (!projects.length) { el.projectsList.appendChild(el.projectsEmpty); return; }
   projects.forEach(proj => {
     const item = document.createElement('div');
     item.className = 'project-item' + (proj.id === state.activeProjectId ? ' active' : '');
@@ -944,18 +929,19 @@ function renderProjects(projects) {
       <span class="project-item-icon">📁</span>
       <div class="project-item-content">
         <div class="project-item-name" title="${escapeHtml(proj.name)}">${escapeHtml(proj.name)}</div>
-        <div class="project-item-count">${proj.files ? proj.files.length + ' arquivo(s)' : ''}</div>
+        <div class="project-item-count">${proj.files ? proj.files.length + ' arquivo(s)' : 'Sem arquivos'}</div>
       </div>
       <div class="history-item-actions">
-        <button class="btn-history-action rename" title="Editar projeto">
+        <button class="btn-history-action rename" title="Editar">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/>
           </svg>
         </button>
-        <button class="btn-history-action delete" title="Deletar projeto">
+        <button class="btn-history-action delete" title="Deletar">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/><path d="M10 11v6M14 11v6"/>
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6M14 11v6"/>
           </svg>
         </button>
       </div>
@@ -978,9 +964,21 @@ async function deleteProject(id, itemEl) {
   });
 }
 
-/* ════════════════════════════════════════════════════════════════
-   MODAL DE PROJETO
-════════════════════════════════════════════════════════════════ */
+// Deletar projeto a partir do modal de detalhes
+async function handleDeleteCurrentProject() {
+  if (!currentProjectId) return;
+  const name = el.projectModalTitle.textContent;
+  openConfirm(async () => {
+    try {
+      await fetch(`${API.BASE}/api/projects/${currentProjectId}`, { method: 'DELETE' });
+      if (state.activeProjectId === currentProjectId) clearProjectContext();
+      closeProjectModal();
+      await loadProjects();
+    } catch (err) { console.error('Erro ao deletar projeto:', err); }
+  });
+}
+
+/* ── Modal de Projeto ─── */
 async function openProjectModal(mode, projectId) {
   currentProjectId = projectId || null;
   el.projectFormSection.hidden   = true;
@@ -990,15 +988,14 @@ async function openProjectModal(mode, projectId) {
 
   if (mode === 'new') {
     el.projectModalTitle.textContent = 'Novo Projeto';
-    el.projectNameInput.value  = '';
-    el.projectDescInput.value  = '';
+    el.projectNameInput.value = ''; el.projectDescInput.value = '';
     el.projectFormSection.hidden = false;
     setTimeout(() => el.projectNameInput.focus(), 50);
 
   } else if (mode === 'edit') {
     el.projectModalTitle.textContent = 'Editar Projeto';
     try {
-      const res  = await fetch(`${API.BASE}/api/projects/${projectId}`);
+      const res = await fetch(`${API.BASE}/api/projects/${projectId}`);
       const proj = await res.json();
       el.projectNameInput.value = proj.name || '';
       el.projectDescInput.value = proj.description || '';
@@ -1008,12 +1005,14 @@ async function openProjectModal(mode, projectId) {
 
   } else if (mode === 'detail') {
     try {
-      const res  = await fetch(`${API.BASE}/api/projects/${projectId}`);
+      const res = await fetch(`${API.BASE}/api/projects/${projectId}`);
       const proj = await res.json();
       el.projectModalTitle.textContent = proj.name;
       el.projectDetailDesc.textContent = proj.description || 'Sem descrição.';
       el.projectDetailSection.hidden   = false;
       renderProjectFiles(proj.files || []);
+      // Carrega os chats vinculados ao projeto
+      await loadProjectChats(projectId);
     } catch { el.projectDetailSection.hidden = false; }
   }
 }
@@ -1028,7 +1027,6 @@ async function saveProject() {
   const name = el.projectNameInput.value.trim();
   if (!name) { el.projectNameInput.focus(); return; }
   const desc = el.projectDescInput.value.trim();
-
   try {
     if (currentProjectId) {
       await fetch(`${API.BASE}/api/projects/${currentProjectId}`, {
@@ -1036,16 +1034,65 @@ async function saveProject() {
         body: JSON.stringify({ name, description: desc }),
       });
     } else {
-      await fetch(`${API.BASE}/api/projects`, {
+      const res = await fetch(`${API.BASE}/api/projects`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name, description: desc }),
       });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
     }
     closeProjectModal();
     await loadProjects();
-  } catch (err) { console.error('Erro ao salvar projeto:', err); }
+  } catch (err) {
+    console.error('Erro ao salvar projeto:', err);
+    alert('Erro ao salvar projeto. Verifique o console.');
+  }
 }
 
+/* ── Chats do projeto ─── */
+async function loadProjectChats(projectId) {
+  if (!el.projectChatsList) return;
+  el.projectChatsList.innerHTML = '<div class="spinner"></div>';
+  try {
+    const res = await fetch(`${API.BASE}/api/history/project/${projectId}`);
+    if (!res.ok) throw new Error();
+    const chats = await res.json();
+    renderProjectChats(chats);
+  } catch {
+    el.projectChatsList.innerHTML = '<p class="project-chats-empty">Erro ao carregar chats.</p>';
+  }
+}
+
+function renderProjectChats(chats) {
+  el.projectChatsList.innerHTML = '';
+  if (!chats.length) {
+    el.projectChatsList.innerHTML = '<p class="project-chats-empty">Nenhum chat iniciado com este projeto ainda.</p>';
+    return;
+  }
+  chats.forEach(conv => {
+    const item = document.createElement('div');
+    item.className = 'project-chat-item';
+    const dateStr = formatDate(new Date(conv.updatedAt || conv.createdAt));
+    item.innerHTML = `
+      <div class="project-chat-item-info">
+        <div class="project-chat-item-title" title="${escapeHtml(conv.title)}">${escapeHtml(conv.title)}</div>
+        <div class="project-chat-item-meta">
+          <span>${dateStr}</span>
+          <span class="project-chat-item-model">${escapeHtml(conv.modelName || '')}</span>
+        </div>
+      </div>
+      <svg class="project-chat-item-arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="9 18 15 12 9 6"/>
+      </svg>
+    `;
+    item.addEventListener('click', () => {
+      closeProjectModal();
+      loadConversation(conv.id);
+    });
+    el.projectChatsList.appendChild(item);
+  });
+}
+
+/* ── Arquivos do projeto ─── */
 function renderProjectFiles(files) {
   el.projectFilesList.innerHTML = '';
   if (!files.length) {
@@ -1056,7 +1103,8 @@ function renderProjectFiles(files) {
     const item = document.createElement('div');
     item.className = 'project-file-item';
     const icon = f.fileType === 'pdf' ? '📄' : f.fileType === 'docx' ? '📝' : f.fileType === 'text' ? '✏️' : '📃';
-    const size = f.content ? Math.round(f.content.length / 1024) + ' KB' : '';
+    const sizeKb = f.contentLength ? Math.round(f.contentLength / 1024) : 0;
+    const size = sizeKb > 0 ? sizeKb + ' KB' : '';
     item.innerHTML = `
       <span class="project-file-icon">${icon}</span>
       <span class="project-file-name" title="${escapeHtml(f.filename)}">${escapeHtml(f.filename)}</span>
@@ -1070,20 +1118,15 @@ function renderProjectFiles(files) {
 async function handleProjectFileUpload(e) {
   const files = Array.from(e.target.files);
   if (!files.length || !currentProjectId) return;
-
   for (const file of files) {
-    const formData = new FormData();
-    formData.append('file', file);
+    const formData = new FormData(); formData.append('file', file);
     try {
-      await fetch(`${API.BASE}/api/projects/${currentProjectId}/files`, {
-        method: 'POST', body: formData,
-      });
+      await fetch(`${API.BASE}/api/projects/${currentProjectId}/files`, { method: 'POST', body: formData });
     } catch (err) { console.error('Erro ao enviar arquivo:', err); }
   }
   e.target.value = '';
-  // Recarrega o modal
-  const res   = await fetch(`${API.BASE}/api/projects/${currentProjectId}`);
-  const proj  = await res.json();
+  const res = await fetch(`${API.BASE}/api/projects/${currentProjectId}`);
+  const proj = await res.json();
   renderProjectFiles(proj.files || []);
   await loadProjects();
 }
@@ -1097,10 +1140,9 @@ async function saveProjectText() {
       method: 'POST', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, content }),
     });
-    el.projectTextName.value    = '';
-    el.projectTextContent.value = '';
-    el.projectTextAdd.hidden    = true;
-    const res  = await fetch(`${API.BASE}/api/projects/${currentProjectId}`);
+    el.projectTextName.value = ''; el.projectTextContent.value = '';
+    el.projectTextAdd.hidden = true;
+    const res = await fetch(`${API.BASE}/api/projects/${currentProjectId}`);
     const proj = await res.json();
     renderProjectFiles(proj.files || []);
     await loadProjects();
@@ -1121,21 +1163,19 @@ function startProjectChat() {
   setProjectContext(currentProjectId, name);
   closeProjectModal();
   newConversation();
-  // Foca no input para o usuário começar a digitar
   setTimeout(() => el.messageInput.focus(), 100);
 }
 
 function setProjectContext(id, name) {
-  state.activeProjectId   = id;
-  state.activeProjectName = name;
-  el.projectContextBadge.hidden  = false;
+  state.activeProjectId    = id;
+  state.activeProjectName  = name;
+  el.projectContextBadge.hidden = false;
   el.projectContextName.textContent = `Projeto: ${name}`;
   document.querySelectorAll('.project-item').forEach(i => i.classList.toggle('active', i.dataset.id === id));
 }
 
 function clearProjectContext() {
-  state.activeProjectId   = null;
-  state.activeProjectName = '';
+  state.activeProjectId = null; state.activeProjectName = '';
   el.projectContextBadge.hidden = true;
   document.querySelectorAll('.project-item').forEach(i => i.classList.remove('active'));
 }
@@ -1213,8 +1253,10 @@ function formatDate(d) {
   return d.toLocaleDateString('pt-BR', { day:'2-digit', month:'2-digit' });
 }
 function formatBytes(b) {
-  if (b < 1024) return b + ' B'; if (b < 1024**2) return (b/1024).toFixed(1)+' KB';
-  if (b < 1024**3) return (b/1024**2).toFixed(1)+' MB'; return (b/1024**3).toFixed(2)+' GB';
+  if (b < 1024) return b + ' B';
+  if (b < 1024**2) return (b/1024).toFixed(1)+' KB';
+  if (b < 1024**3) return (b/1024**2).toFixed(1)+' MB';
+  return (b/1024**3).toFixed(2)+' GB';
 }
 
 document.addEventListener('DOMContentLoaded', init);
