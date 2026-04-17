@@ -44,7 +44,7 @@ public class OllamaService {
     private static final String WEB_CONTEXT_PREFIX = "[WEB_SEARCH_CONTEXT]\n";
 
     private static final String IDENTITY_PROMPT =
-            "Você é o KyronAI, um assistente de IA local criado para rodar inteiramente " +
+            "Você é o Kyron, um assistente de IA local criado para rodar inteiramente " +
             "no hardware do usuário via Ollama. Você é direto, técnico quando necessário, " +
             "e sempre respeita a privacidade do usuário — nenhum dado é enviado para " +
             "servidores externos. Responda sempre no idioma em que o usuário escrever.";

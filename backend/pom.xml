@@ -16,9 +16,9 @@
 
     <!-- ── Identificação do projeto ────────────────────────────────────────── -->
     <groupId>com.otavio</groupId>
-    <artifactId>openchat</artifactId>
+    <artifactId>kyron</artifactId>
     <version>1.0.0</version>
-    <name>OpenChat</name>
+    <name>Kyron</name>
     <description>Interface web para modelos de linguagem open source via Ollama</description>
     <packaging>jar</packaging>
 
