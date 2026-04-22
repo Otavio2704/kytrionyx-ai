@@ -20,13 +20,131 @@ const state = {
   abortController:  null,
   activeProjectId:  null,
   activeProjectName:'',
-  activeGithubRepo: null,   // { id, fullName }
-  codeSession:      null,   // sessão de código atual
-  pendingActions:   [],     // ações do agente aguardando aprovação
+  activeGithubRepo: null,
+  codeSession:      null,
+  pendingActions:   [],
+  inlinePreviews:   {},
+  nextInlinePreviewId: 0,
+  // File System Agent
+  fsRootPath:       null,   // pasta selecionada pelo usuário
 };
 
 const $ = id => document.getElementById(id);
 let el = {};
+
+const FsAgent = (() => {
+  let rootHandle = null;
+  let rootPath = null;
+  const listeners = new Set();
+
+  const notify = () => {
+    listeners.forEach(cb => {
+      try { cb(rootPath); } catch (_) { /* ignore listener error */ }
+    });
+  };
+
+  const sanitizeRelativePath = (relativePath) => {
+    const clean = String(relativePath || '')
+      .replace(/\\\\/g, '/')
+      .replace(/^\/+/, '')
+      .trim();
+    if (!clean || clean.includes('..')) throw new Error('caminho inválido');
+    return clean;
+  };
+
+  const resolveParentDirectory = async (relativePath, create) => {
+    if (!rootHandle) throw new Error('pasta não selecionada');
+    const clean = sanitizeRelativePath(relativePath);
+    const parts = clean.split('/').filter(Boolean);
+    if (!parts.length) throw new Error('caminho inválido');
+
+    let dir = rootHandle;
+    for (const part of parts.slice(0, -1)) {
+      dir = await dir.getDirectoryHandle(part, { create });
+    }
+
+    return { dir, fileName: parts[parts.length - 1], clean };
+  };
+
+  return {
+    isSupported() {
+      return typeof window !== 'undefined' && typeof window.showDirectoryPicker === 'function';
+    },
+
+    onRootChange(cb) {
+      if (typeof cb === 'function') listeners.add(cb);
+      return () => listeners.delete(cb);
+    },
+
+    hasRoot() {
+      return Boolean(rootHandle);
+    },
+
+    getRootPath() {
+      return rootPath;
+    },
+
+    async selectRoot() {
+      if (!this.isSupported()) return { ok: false, reason: 'unsupported' };
+      try {
+        const handle = await window.showDirectoryPicker();
+        rootHandle = handle;
+        rootPath = handle?.name || 'pasta-selecionada';
+        notify();
+        return { ok: true, path: rootPath };
+      } catch (err) {
+        if (err?.name === 'AbortError') return { ok: false, reason: 'cancelled' };
+        return { ok: false, reason: err?.message || 'erro ao selecionar pasta' };
+      }
+    },
+
+    clearRoot() {
+      rootHandle = null;
+      rootPath = null;
+      notify();
+    },
+
+    async verifyPermission() {
+      if (!rootHandle) return false;
+      try {
+        const options = { mode: 'readwrite' };
+        if ((await rootHandle.queryPermission(options)) === 'granted') return true;
+        return (await rootHandle.requestPermission(options)) === 'granted';
+      } catch (_) {
+        return false;
+      }
+    },
+
+    async writeFile(relativePath, content) {
+      try {
+        const hasPermission = await this.verifyPermission();
+        if (!hasPermission) return { ok: false, reason: 'permissão negada' };
+
+        const { dir, fileName, clean } = await resolveParentDirectory(relativePath, true);
+        const fileHandle = await dir.getFileHandle(fileName, { create: true });
+        const writable = await fileHandle.createWritable();
+        await writable.write(String(content ?? ''));
+        await writable.close();
+        return { ok: true, path: clean };
+      } catch (err) {
+        return { ok: false, reason: err?.message || 'erro ao salvar arquivo' };
+      }
+    },
+
+    async deleteFile(relativePath) {
+      try {
+        const hasPermission = await this.verifyPermission();
+        if (!hasPermission) return { ok: false, reason: 'permissão negada' };
+
+        const { dir, fileName, clean } = await resolveParentDirectory(relativePath, false);
+        await dir.removeEntry(fileName, { recursive: false });
+        return { ok: true, path: clean };
+      } catch (err) {
+        return { ok: false, reason: err?.message || 'erro ao remover arquivo' };
+      }
+    },
+  };
+})();
 
 function initRefs() {
   el = {
@@ -119,7 +237,6 @@ function initRefs() {
     btnGithub:            $('btn-github'),
     fileInput:            $('file-input'),
     attachPreview:        $('attach-preview'),
-    // Painel do Modo Código
     codePanel:            $('code-panel'),
     codePanelClose:       $('code-panel-close'),
     codePanelDownloadZip: $('code-panel-download-zip'),
@@ -128,10 +245,8 @@ function initRefs() {
     codeEditorFilename:   $('code-editor-filename'),
     codePanelDownloadFile:$('code-panel-download-file'),
     codeDiffToggle:       $('code-diff-toggle'),
-    // Painel de ações do agente
     agentActionsPanel:    $('agent-actions-panel'),
     agentActionsList:     $('agent-actions-list'),
-    // Modal GitHub
     githubBackdrop:       $('github-backdrop'),
     githubModalClose:     $('github-modal-close'),
     githubRepoInput:      $('github-repo-input'),
@@ -143,6 +258,18 @@ function initRefs() {
     githubContextBadge:   $('github-context-badge'),
     githubContextName:    $('github-context-name'),
     btnClearGithub:       $('btn-clear-github'),
+    // Overlay de coding
+    codingOverlay:        $('coding-overlay'),
+    codingOverlayFiles:   $('coding-overlay-files'),
+    codePanelTabs:        $('code-panel-tabs'),
+    codePanelPreview:     $('code-panel-preview'),
+    codePanelResizeHandle:$('code-panel-resize-handle'),
+    // File System Agent
+    agentFsBar:           $('agent-fs-bar'),
+    agentFsPath:          $('agent-fs-path'),
+    btnAgentFsSelect:     $('btn-agent-fs-select'),
+    btnAgentFsClear:      $('btn-agent-fs-clear'),
+    agentFsUnsupported:   $('agent-fs-unsupported'),
   };
 }
 
@@ -152,8 +279,10 @@ function initRefs() {
 async function init() {
   initRefs();
   setupEventListeners();
+  setupCodePanelResize();
   configureMarked();
   loadPreferences();
+  setupFsAgent();
   await Promise.all([loadModels(), loadHistory(), loadProjects()]);
   setupSectionToggles();
 }
@@ -162,7 +291,6 @@ function configureMarked() {
   const renderer = new marked.Renderer();
   renderer.code = (code, lang) => {
     const codeText = typeof code === 'object' ? code.text : code;
-    // Remove o caminho do arquivo da linguagem exibida (ex: "java:src/App.java" → "java")
     const rawLang = typeof lang === 'string' ? lang : '';
     const langOnly = rawLang.includes(':') ? rawLang.split(':')[0] : rawLang;
     const filePath = rawLang.includes(':') ? rawLang.split(':').slice(1).join(':') : null;
@@ -351,7 +479,6 @@ function setupEventListeners() {
     loadCapabilities(state.model);
   });
 
-  // Botão Web Search
   el.btnWebSearch.addEventListener('click', () => {
     state.webSearchEnabled = !state.webSearchEnabled;
     el.btnWebSearch.classList.toggle('active', state.webSearchEnabled);
@@ -359,11 +486,9 @@ function setupEventListeners() {
     el.btnWebSearch.title = state.webSearchEnabled ? 'Busca web ativa — clique para desativar' : 'Ativar busca web (RAG)';
   });
 
-  // Botão Modo Código
   el.btnCodeMode.addEventListener('click', () => {
     state.codeModeEnabled = !state.codeModeEnabled;
     if (state.codeModeEnabled && state.agentModeEnabled) {
-      // Mutuamente exclusivos — desativa agente ao ativar código
       state.agentModeEnabled = false;
       el.btnAgentMode.classList.remove('active');
     }
@@ -372,7 +497,6 @@ function setupEventListeners() {
     if (state.codeModeEnabled && state.conversationId) loadCodeSession();
   });
 
-  // Botão Modo Agente
   el.btnAgentMode.addEventListener('click', () => {
     state.agentModeEnabled = !state.agentModeEnabled;
     if (state.agentModeEnabled && state.codeModeEnabled) {
@@ -381,24 +505,21 @@ function setupEventListeners() {
     }
     el.btnAgentMode.classList.toggle('active', state.agentModeEnabled);
     el.btnAgentMode.title = state.agentModeEnabled ? 'Modo Agente ativo' : 'Ativar Modo Agente';
+    updateFsBarVisibility();
   });
 
-  // Botão GitHub
   el.btnGithub.addEventListener('click', openGithubModal);
 
-  // Painel de código
   el.codePanelClose.addEventListener('click', closeCodePanel);
   el.codePanelDownloadZip.addEventListener('click', downloadProjectZip);
   el.codePanelDownloadFile.addEventListener('click', downloadCurrentFile);
   el.codeDiffToggle.addEventListener('click', toggleDiffView);
 
-  // Modal GitHub
   el.githubModalClose.addEventListener('click', closeGithubModal);
   el.githubBackdrop.addEventListener('click', e => { if (e.target === el.githubBackdrop) closeGithubModal(); });
   el.btnGithubConnect.addEventListener('click', connectGithubRepo);
   el.btnClearGithub.addEventListener('click', clearGithubContext);
 
-  // Outros
   el.btnAttach.addEventListener('click', () => el.fileInput.click());
   el.fileInput.addEventListener('change', handleFileSelect);
 
@@ -459,10 +580,156 @@ function setStreamingUI(streaming) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   MODO CÓDIGO — Painel de arquivos
+   CODING OVERLAY — overlay de espera no modo código
+════════════════════════════════════════════════════════════════ */
+
+let _codingOverlayEl = null;
+let _codingFileListEl = null;
+let _codingDetectedFiles = [];
+let _codingBuffer = '';
+let _codingPhraseInterval = null;
+
+const CODING_PHRASES = [
+  'Codando...',
+  'Analisando estrutura...',
+  'Escrevendo lógica...',
+  'Organizando arquivos...',
+  'Aplicando boas práticas...',
+  'Finalizando implementação...',
+];
+
+function showCodingOverlay(assistantMsgEl) {
+  // Remove overlay anterior se existir
+  hideCodingOverlay();
+
+  _codingDetectedFiles = [];
+  _codingBuffer = '';
+
+  const overlay = document.createElement('div');
+  overlay.className = 'coding-overlay';
+  overlay.innerHTML = `
+    <div class="coding-overlay-inner">
+      <div class="coding-spinner-wrap">
+        <div class="coding-spinner">
+          <div class="coding-spinner-ring"></div>
+          <div class="coding-spinner-ring coding-spinner-ring--2"></div>
+          <div class="coding-spinner-ring coding-spinner-ring--3"></div>
+          <svg class="coding-spinner-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+      </div>
+      <div class="coding-status-wrap">
+        <p class="coding-status-text" id="coding-status-text">Codando...</p>
+        <div class="coding-files-list" id="coding-files-list"></div>
+      </div>
+    </div>
+  `;
+
+  // Substitui o conteúdo do message-text pelo overlay
+  const textEl = assistantMsgEl.querySelector('.message-text');
+  if (textEl) textEl.appendChild(overlay);
+
+  _codingOverlayEl = overlay;
+  _codingFileListEl = overlay.querySelector('#coding-files-list');
+
+  // Rotaciona frases
+  let phraseIdx = 0;
+  const statusEl = overlay.querySelector('#coding-status-text');
+  _codingPhraseInterval = setInterval(() => {
+    phraseIdx = (phraseIdx + 1) % CODING_PHRASES.length;
+    if (statusEl) {
+      statusEl.style.opacity = '0';
+      setTimeout(() => {
+        statusEl.textContent = CODING_PHRASES[phraseIdx];
+        statusEl.style.opacity = '1';
+      }, 200);
+    }
+  }, 2200);
+}
+
+function updateCodingOverlayFile(filePath) {
+  if (!_codingFileListEl) return;
+  if (_codingDetectedFiles.includes(filePath)) return;
+  _codingDetectedFiles.push(filePath);
+
+  const item = document.createElement('div');
+  item.className = 'coding-file-item coding-file-item--new';
+  const ext = filePath.split('.').pop().toLowerCase();
+  item.innerHTML = `
+    <span class="coding-file-icon">${getFileIcon(ext)}</span>
+    <span class="coding-file-name">${escapeHtml(filePath)}</span>
+    <span class="coding-file-status">Criando...</span>
+  `;
+  _codingFileListEl.appendChild(item);
+
+  // Remove a classe de animação depois
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => item.classList.remove('coding-file-item--new'));
+  });
+}
+
+function markCodingFilesDone() {
+  if (!_codingFileListEl) return;
+  _codingFileListEl.querySelectorAll('.coding-file-status').forEach(s => {
+    s.textContent = 'Concluído';
+    s.classList.add('done');
+  });
+}
+
+function hideCodingOverlay() {
+  if (_codingPhraseInterval) { clearInterval(_codingPhraseInterval); _codingPhraseInterval = null; }
+  if (_codingOverlayEl) { _codingOverlayEl.remove(); _codingOverlayEl = null; }
+  _codingFileListEl = null;
+  _codingDetectedFiles = [];
+  _codingBuffer = '';
+}
+
+// Detecta blocos de código no buffer acumulado para mostrar nomes de arquivo durante streaming
+function detectFilesInBuffer(chunk) {
+  _codingBuffer += chunk;
+  // Regex para capturar ```lang:caminho/arquivo.ext
+  const filePattern = /```[a-zA-Z0-9+#_-]*:([^\n`]+)/g;
+  let match;
+  while ((match = filePattern.exec(_codingBuffer)) !== null) {
+    const filePath = match[1].trim();
+    if (filePath) updateCodingOverlayFile(filePath);
+  }
+}
+
+// Notifica o usuário quando o código foi gerado (se está em outra aba)
+function notifyCodeGenerated() {
+  // Solicita permissão de notificação se ainda não foi concedida
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+
+  // Se a aba não está visível, mostra notificação
+  if ('Notification' in window && Notification.permission === 'granted' && document.hidden) {
+    const notification = new Notification('Kyron AI - Código Pronto! 🎉', {
+      body: 'Seu código foi gerado com sucesso. Clique para voltar ao chat.',
+      icon: 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100"%3E%3Cpolygon points="50,5 93,27.5 93,72.5 50,95 7,72.5 7,27.5" fill="%2310a37f"/%3E%3Ctext x="50" y="67" font-size="48" text-anchor="middle" fill="%23FFFFFF" font-family="system-ui" font-weight="bold"%3E💬%3C/text%3E%3C/svg%3E',
+      tag: 'kyron-code-ready',
+      requireInteraction: false,
+    });
+
+    // Foca a janela quando clica na notificação
+    notification.addEventListener('click', () => {
+      window.focus();
+      notification.close();
+    });
+
+    // Auto-fecha a notificação após 5 segundos
+    setTimeout(() => notification.close(), 5000);
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════
+   MODO CÓDIGO — Painel lateral com tabs (Preview + Código)
 ════════════════════════════════════════════════════════════════ */
 let currentFileId   = null;
 let showingDiff     = false;
+let activeTab       = 'code'; // 'preview' | 'code'
 
 async function loadCodeSession() {
   if (!state.conversationId) return;
@@ -483,7 +750,7 @@ function renderCodePanel() {
   el.codePanel.classList.add('open');
   document.body.classList.add('code-panel-open');
   renderFileTree();
-  // Abre o primeiro arquivo automaticamente
+  renderTabBar();
   if (state.codeSession.files?.length > 0) {
     openFileInEditor(state.codeSession.files[0]);
   }
@@ -494,9 +761,231 @@ function closeCodePanel() {
   document.body.classList.remove('code-panel-open');
 }
 
+window.openCodePanelFromBanner = async function() {
+  if (!state.conversationId) return;
+  if (!state.codeSession?.files?.length) await loadCodeSession();
+  if (!state.codeSession?.files?.length) return;
+
+  renderCodePanel();
+  activeTab = 'preview';
+  switchCodeTab('preview');
+};
+
+function setupCodePanelResize() {
+  const handle = el.codePanelResizeHandle;
+  if (!handle) return;
+
+  const storageKey = 'oc-code-panel-w';
+  const minWidth = 560;
+  const maxWidth = () => Math.max(680, Math.min(window.innerWidth - 80, 1400));
+  const isDesktop = () => window.matchMedia('(min-width: 1025px)').matches;
+
+  const clamp = (width) => Math.max(minWidth, Math.min(width, maxWidth()));
+  const applyWidth = (width, persist = true) => {
+    if (!isDesktop()) return;
+    const w = clamp(width);
+    document.documentElement.style.setProperty('--code-panel-w', `${w}px`);
+    if (persist) localStorage.setItem(storageKey, String(w));
+  };
+
+  const saved = Number.parseInt(localStorage.getItem(storageKey) || '', 10);
+  if (Number.isFinite(saved)) applyWidth(saved, false);
+
+  let startX = 0;
+  let startWidth = 0;
+  let dragging = false;
+
+  const onMove = (ev) => {
+    if (!dragging) return;
+    const delta = startX - ev.clientX;
+    applyWidth(startWidth + delta, false);
+  };
+
+  const onUp = () => {
+    if (!dragging) return;
+    dragging = false;
+    document.body.classList.remove('code-panel-resizing');
+    const current = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue('--code-panel-w'), 10);
+    if (Number.isFinite(current)) localStorage.setItem(storageKey, String(current));
+    window.removeEventListener('pointermove', onMove);
+    window.removeEventListener('pointerup', onUp);
+  };
+
+  handle.addEventListener('pointerdown', (ev) => {
+    if (!isDesktop()) return;
+    dragging = true;
+    startX = ev.clientX;
+    startWidth = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue('--code-panel-w'), 10) || 680;
+    document.body.classList.add('code-panel-resizing');
+    handle.setPointerCapture?.(ev.pointerId);
+    window.addEventListener('pointermove', onMove);
+    window.addEventListener('pointerup', onUp, { once: true });
+  });
+
+  window.addEventListener('resize', () => {
+    if (!isDesktop()) return;
+    const current = Number.parseInt(getComputedStyle(document.documentElement).getPropertyValue('--code-panel-w'), 10) || 680;
+    applyWidth(current, false);
+  });
+}
+
+/* ── Tab bar ─── */
+function renderTabBar() {
+  const tabBar = el.codePanelTabs;
+  if (!tabBar) return;
+  tabBar.innerHTML = `
+    <button class="code-tab ${activeTab === 'preview' ? 'active' : ''}" data-tab="preview" onclick="switchCodeTab('preview')">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <rect x="3" y="3" width="18" height="18" rx="2"/><path d="M3 9h18M9 21V9"/>
+      </svg>
+      Prévia
+    </button>
+    <button class="code-tab ${activeTab === 'code' ? 'active' : ''}" data-tab="code" onclick="switchCodeTab('code')">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+      </svg>
+      Código
+    </button>
+  `;
+}
+
+window.switchCodeTab = function(tab) {
+  activeTab = tab;
+  renderTabBar();
+
+  const previewPane = el.codePanelPreview;
+  const editorPane  = document.querySelector('.code-editor');
+
+  if (tab === 'preview') {
+    if (previewPane) previewPane.hidden = false;
+    if (editorPane)  editorPane.style.display = 'none';
+    renderPreviewPane();
+  } else {
+    if (previewPane) previewPane.hidden = true;
+    if (editorPane)  editorPane.style.display = '';
+  }
+};
+
+function renderPreviewPane() {
+  const previewPane = el.codePanelPreview;
+  if (!previewPane || !state.codeSession) return;
+
+  // Procura arquivo HTML para preview
+  const htmlFile = state.codeSession.files?.find(f =>
+    f.extension === 'html' || f.fileName?.endsWith('.html')
+  );
+
+  if (htmlFile) {
+    // Monta iframe com o HTML + CSS + JS injetados
+    const cssFiles = state.codeSession.files?.filter(f => f.extension === 'css') || [];
+    const jsFiles  = state.codeSession.files?.filter(f => f.extension === 'js' || f.extension === 'jsx' || f.extension === 'tsx')  || [];
+
+    let html = htmlFile.content || '';
+
+    // Detecta se precisa de frameworks
+    const allContent = htmlFile.content + jsFiles.map(f => f.content).join('\n');
+    const needsReact = /import.*React|import.*from\s+['"]react['"]|jsx|<[A-Z]/m.test(allContent);
+    const needsVue = /import.*Vue|import.*from\s+['"]vue['"]|\{\{.*\}\}|v-/m.test(allContent);
+    const needsAlpine = /x-|@click|:class|Alpine/m.test(allContent);
+
+    // Injeta CDNs necessários na head
+    const cdnScripts = [];
+    if (needsReact) {
+      cdnScripts.push('  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"><\/script>');
+      cdnScripts.push('  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"><\/script>');
+      cdnScripts.push('  <script src="https://unpkg.com/@babel/standalone/babel.min.js"><\/script>');
+    }
+    if (needsVue) {
+      cdnScripts.push('  <script src="https://unpkg.com/vue@3/dist/vue.global.prod.js"><\/script>');
+    }
+    if (needsAlpine) {
+      cdnScripts.push('  <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"><\/script>');
+    }
+
+    if (cdnScripts.length > 0) {
+      if (html.includes('</head>')) {
+        html = html.replace('</head>', cdnScripts.join('\n') + '\n</head>');
+      } else {
+        html = cdnScripts.join('\n') + '\n' + html;
+      }
+    }
+
+    // Injeta CSS inline
+    cssFiles.forEach(f => {
+      const tag = `<style>/* ${escapeHtml(f.fileName)} */\n${f.content}</style>`;
+      if (html.includes('</head>')) {
+        html = html.replace('</head>', tag + '</head>');
+      } else {
+        html = tag + html;
+      }
+    });
+
+    // Injeta JS/JSX inline com babel transform se necessário
+    jsFiles.forEach(f => {
+      let scriptContent = f.content;
+      const isJsx = f.extension === 'jsx' || (f.extension === 'tsx');
+      
+      if (isJsx && needsReact) {
+        // Envolve em tipo babel para transpilação automática
+        const tag = `<script type="text/babel">/* ${f.fileName} */\n${scriptContent}<\/script>`;
+        if (html.includes('</body>')) {
+          html = html.replace('</body>', tag + '</body>');
+        } else {
+          html = html + tag;
+        }
+      } else {
+        const tag = `<script>/* ${f.fileName} */\n${scriptContent}<\/script>`;
+        if (html.includes('</body>')) {
+          html = html.replace('</body>', tag + '</body>');
+        } else {
+          html = html + tag;
+        }
+      }
+    });
+
+    previewPane.innerHTML = `
+      <div class="preview-header">
+        <span class="preview-label">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+          </svg>
+          ${escapeHtml(htmlFile.fileName)}
+        </span>
+        <button class="preview-refresh" onclick="renderPreviewPane()" title="Recarregar">↺</button>
+      </div>
+      <iframe class="preview-iframe" sandbox="allow-scripts allow-same-origin allow-popups"></iframe>
+    `;
+
+    const iframe = previewPane.querySelector('iframe');
+    iframe.srcdoc = html;
+  } else {
+    // Sem HTML: mostra listagem dos arquivos gerados com destaque
+    const files = state.codeSession.files || [];
+    previewPane.innerHTML = `
+      <div class="preview-no-html">
+        <div class="preview-no-html-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+        <p class="preview-no-html-title">${files.length} arquivo${files.length !== 1 ? 's' : ''} gerado${files.length !== 1 ? 's' : ''}</p>
+        <p class="preview-no-html-sub">Prévia disponível para projetos com HTML.<br/>Selecione um arquivo na aba Código para visualizar.</p>
+        <div class="preview-file-chips">
+          ${files.map(f => `
+            <div class="preview-file-chip" onclick="switchCodeTab('code'); setTimeout(() => openFileById('${f.id}'), 50)">
+              <span>${getFileIcon(f.extension || '')}</span>
+              <span>${escapeHtml(f.fileName)}</span>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+}
+
+/* ── Árvore de arquivos ─── */
 function renderFileTree() {
   const files = state.codeSession?.files || [];
-  // Agrupa por diretório
   const tree = {};
   files.forEach(f => {
     const parts = f.filePath.split('/');
@@ -507,7 +996,6 @@ function renderFileTree() {
     }
     node[parts[parts.length - 1]] = { _file: f };
   });
-
   el.codeFileTree.innerHTML = renderTreeNode(tree, 0);
 }
 
@@ -515,7 +1003,6 @@ function renderTreeNode(node, depth) {
   let html = '';
   const indent = depth * 14;
 
-  // Diretórios primeiro
   Object.entries(node)
     .filter(([, v]) => v._dir)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -531,7 +1018,6 @@ function renderTreeNode(node, depth) {
       `;
     });
 
-  // Arquivos
   Object.entries(node)
     .filter(([, v]) => v._file)
     .sort(([a], [b]) => a.localeCompare(b))
@@ -578,8 +1064,7 @@ function openFileInEditor(file) {
   el.codeDiffToggle.style.display   = file.previousContent ? '' : 'none';
   el.codeDiffToggle.textContent     = 'Ver Diff';
   renderEditorContent(file.content, file.extension);
-  // Marca arquivo ativo na árvore
-  document.querySelectorAll('.tree-file').forEach(el => el.classList.remove('active'));
+  document.querySelectorAll('.tree-file').forEach(e => e.classList.remove('active'));
   document.querySelector(`.tree-file[data-file-id="${file.id}"]`)?.classList.add('active');
 }
 
@@ -588,7 +1073,22 @@ function renderEditorContent(content, ext) {
   const result   = language
     ? hljs.highlight(content, { language })
     : hljs.highlightAuto(content);
-  el.codeEditorContent.innerHTML = `<code class="hljs">${result.value}</code>`;
+
+  // Renderiza com números de linha
+  const lines = result.value.split('\n');
+  const lineNumbers = lines.map((_, i) =>
+    `<span class="line-number">${i + 1}</span>`
+  ).join('\n');
+  const codeLines = lines.map(line =>
+    `<span class="code-line">${line}</span>`
+  ).join('\n');
+
+  el.codeEditorContent.innerHTML = `
+    <div class="code-with-lines">
+      <div class="line-numbers-col" aria-hidden="true">${lineNumbers}</div>
+      <code class="hljs code-lines-col">${codeLines}</code>
+    </div>
+  `;
 }
 
 function toggleDiffView() {
@@ -609,30 +1109,21 @@ function renderDiffView(oldContent, newContent) {
   const oldLines = oldContent.split('\n');
   const newLines = newContent.split('\n');
 
-  // Diff simples linha a linha
-  const maxLen = Math.max(oldLines.length, newLines.length);
   let html = '<div class="diff-view">';
 
-  const addedSet   = new Set();
-  const removedSet = new Set();
-
-  // Detecta linhas adicionadas/removidas por conteúdo
   const oldSet = new Set(oldLines);
   const newSet = new Set(newLines);
+  const addedSet = new Set();
 
   newLines.forEach((line, i) => {
     if (!oldSet.has(line)) addedSet.add(i);
   });
-  oldLines.forEach((line, i) => {
-    if (!newSet.has(line)) removedSet.add(i);
-  });
 
-  // Renderiza lado a lado (diff unificado simplificado)
   let lineNum = 1;
   for (let i = 0; i < newLines.length; i++) {
-    const line     = newLines[i];
-    const isAdded  = addedSet.has(i);
-    const cls      = isAdded ? 'diff-added' : '';
+    const line    = newLines[i];
+    const isAdded = addedSet.has(i);
+    const cls     = isAdded ? 'diff-added' : '';
     html += `<div class="diff-line ${cls}">
       <span class="diff-line-num">${lineNum++}</span>
       <span class="diff-prefix">${isAdded ? '+' : ' '}</span>
@@ -679,8 +1170,94 @@ function triggerDownload(blob, filename) {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   MODO AGENTE — Cards de aprovação
+   FILE SYSTEM AGENT — Integração com File System Access API
 ════════════════════════════════════════════════════════════════ */
+
+function setupFsAgent() {
+  if (!FsAgent.isSupported()) {
+    // Browser não suporta — mostra aviso e esconde controles
+    if (el.agentFsUnsupported) el.agentFsUnsupported.hidden = false;
+    if (el.btnAgentFsSelect)   el.btnAgentFsSelect.disabled = true;
+    return;
+  }
+
+  // Callback quando a pasta muda
+  FsAgent.onRootChange(path => {
+    state.fsRootPath = path;
+    renderFsBar();
+  });
+
+  // Botão selecionar pasta
+  el.btnAgentFsSelect?.addEventListener('click', async () => {
+    const result = await FsAgent.selectRoot();
+    if (result.ok) {
+      showFsToast(`Pasta conectada: ${result.path}`, 'success');
+    } else if (result.reason !== 'cancelled') {
+      showFsToast(`Erro ao acessar pasta: ${result.reason}`, 'error');
+    }
+  });
+
+  // Botão limpar pasta
+  el.btnAgentFsClear?.addEventListener('click', () => {
+    FsAgent.clearRoot();
+    showFsToast('Pasta desconectada.', 'info');
+  });
+
+  renderFsBar();
+}
+
+function updateFsBarVisibility() {
+  if (!el.agentFsBar) return;
+  el.agentFsBar.hidden = !state.agentModeEnabled;
+}
+
+function renderFsBar() {
+  if (!el.agentFsBar) return;
+  const hasRoot = FsAgent.hasRoot();
+  const path    = FsAgent.getRootPath();
+
+  if (el.agentFsPath) {
+    el.agentFsPath.textContent = hasRoot
+      ? path
+      : 'Nenhuma pasta selecionada';
+    el.agentFsPath.classList.toggle('connected', hasRoot);
+  }
+
+  if (el.btnAgentFsSelect) {
+    el.btnAgentFsSelect.textContent = hasRoot ? '↺ Trocar pasta' : 'Selecionar pasta';
+  }
+
+  if (el.btnAgentFsClear) {
+    el.btnAgentFsClear.hidden = !hasRoot;
+  }
+
+  // Atualiza indicador no botão do agente na toolbar
+  el.btnAgentMode?.classList.toggle('fs-connected', hasRoot);
+}
+
+function showFsToast(message, type = 'info') {
+  const existing = document.querySelector('.fs-toast');
+  if (existing) existing.remove();
+
+  const toast = document.createElement('div');
+  toast.className = `fs-toast fs-toast--${type}`;
+  toast.innerHTML = `
+    <span class="fs-toast-icon">${type === 'success' ? '✓' : type === 'error' ? '✕' : 'ℹ'}</span>
+    <span>${escapeHtml(message)}</span>
+  `;
+  document.body.appendChild(toast);
+
+  requestAnimationFrame(() => toast.classList.add('visible'));
+  setTimeout(() => {
+    toast.classList.remove('visible');
+    setTimeout(() => toast.remove(), 300);
+  }, 3000);
+}
+
+/* ════════════════════════════════════════════════════════════════
+   MODO AGENTE — Cards de aprovação com escrita local
+════════════════════════════════════════════════════════════════ */
+
 function renderAgentActions(actions) {
   state.pendingActions = actions.filter(a => a.status === 'PENDING');
   if (state.pendingActions.length === 0) {
@@ -688,32 +1265,56 @@ function renderAgentActions(actions) {
     return;
   }
 
+  const fsAvailable = FsAgent.isSupported() && FsAgent.hasRoot();
+
   el.agentActionsPanel.hidden = false;
-  el.agentActionsList.innerHTML = state.pendingActions.map(action => `
-    <div class="agent-action-card" data-action-id="${action.id}">
-      <div class="agent-action-header">
-        <span class="agent-action-type agent-action-type-${action.actionType.toLowerCase()}">
-          ${getActionTypeIcon(action.actionType)} ${action.actionType.replace('_', ' ')}
-        </span>
-        ${action.filePath ? `<span class="agent-action-path">${escapeHtml(action.filePath)}</span>` : ''}
+  el.agentActionsList.innerHTML = state.pendingActions.map(action => {
+    const needsFs = ['CREATE_FILE', 'EDIT_FILE', 'DELETE_FILE'].includes(action.actionType);
+    const fsWarn  = needsFs && !fsAvailable
+      ? `<div class="agent-action-fs-warn">
+           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+             <path d="M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z"/>
+             <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+           </svg>
+           Selecione uma pasta para salvar localmente
+         </div>`
+      : '';
+
+    return `
+      <div class="agent-action-card" data-action-id="${action.id}">
+        <div class="agent-action-header">
+          <span class="agent-action-type agent-action-type-${action.actionType.toLowerCase()}">
+            ${getActionTypeIcon(action.actionType)} ${action.actionType.replace('_', ' ')}
+          </span>
+          ${action.filePath ? `<span class="agent-action-path">${escapeHtml(action.filePath)}</span>` : ''}
+          ${fsAvailable && needsFs
+            ? `<span class="agent-action-fs-badge">
+                 <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                   <path d="M22 19a2 2 0 01-2 2H4a2 2 0 01-2-2V5a2 2 0 012-2h5l2 3h9a2 2 0 012 2z"/>
+                 </svg>
+                 ${escapeHtml(FsAgent.getRootPath())}
+               </span>`
+            : ''}
+        </div>
+        <div class="agent-action-desc">${escapeHtml(action.description || '')}</div>
+        ${fsWarn}
+        ${action.proposedContent ? `
+          <details class="agent-action-preview">
+            <summary>Ver conteúdo proposto</summary>
+            <pre class="agent-action-code"><code>${escapeHtml(action.proposedContent.slice(0, 500))}${action.proposedContent.length > 500 ? '\n...' : ''}</code></pre>
+          </details>
+        ` : ''}
+        <div class="agent-action-btns">
+          <button class="btn-agent-reject" onclick="rejectAgentAction('${action.id}')">
+            ✕ Rejeitar
+          </button>
+          <button class="btn-agent-approve" onclick="approveAgentAction('${action.id}')">
+            ✓ Aprovar${fsAvailable && needsFs ? ' e salvar' : ''}
+          </button>
+        </div>
       </div>
-      <div class="agent-action-desc">${escapeHtml(action.description || '')}</div>
-      ${action.proposedContent ? `
-        <details class="agent-action-preview">
-          <summary>Ver conteúdo proposto</summary>
-          <pre class="agent-action-code"><code>${escapeHtml(action.proposedContent.slice(0, 500))}${action.proposedContent.length > 500 ? '\n...' : ''}</code></pre>
-        </details>
-      ` : ''}
-      <div class="agent-action-btns">
-        <button class="btn-agent-reject" onclick="rejectAgentAction('${action.id}')">
-          ✕ Rejeitar
-        </button>
-        <button class="btn-agent-approve" onclick="approveAgentAction('${action.id}')">
-          ✓ Aprovar
-        </button>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
 function getActionTypeIcon(type) {
@@ -726,34 +1327,86 @@ function getActionTypeIcon(type) {
 
 window.approveAgentAction = async function(actionId) {
   const card = document.querySelector(`.agent-action-card[data-action-id="${actionId}"]`);
-  if (card) { card.classList.add('processing'); }
+  if (card) card.classList.add('processing');
 
   try {
+    const fileActionTypes = ['CREATE_FILE', 'EDIT_FILE', 'DELETE_FILE'];
+    const pendingAction = state.pendingActions.find(action => action.id === actionId);
+    const needsLocalWrite = Boolean(pendingAction && fileActionTypes.includes(pendingAction.actionType));
+
+    if (needsLocalWrite && !FsAgent.isSupported()) {
+      if (card) card.classList.remove('processing');
+      showFsToast('Seu navegador não suporta acesso local de arquivos. Use um navegador compatível com File System Access API.', 'error');
+      return;
+    }
+
+    if (needsLocalWrite && !FsAgent.hasRoot()) {
+      const selected = await FsAgent.selectRoot();
+      if (!selected?.ok) {
+        if (card) card.classList.remove('processing');
+        showFsToast('Selecione uma pasta para permitir que o agente crie arquivos localmente.', 'error');
+        return;
+      }
+    }
+
+    // Para ações de arquivo, só aprova no backend após escrita local com sucesso
+    if (needsLocalWrite) {
+      const targetPath = pendingAction?.filePath;
+      if (!targetPath) {
+        if (card) card.classList.remove('processing');
+        showFsToast('Ação sem caminho de arquivo. Não foi possível executar localmente.', 'error');
+        return;
+      }
+
+      const permitted = await FsAgent.verifyPermission();
+      if (!permitted) {
+        if (card) card.classList.remove('processing');
+        setCardFsStatus(card, 'error', 'permissão negada');
+        showFsToast('Permissão de escrita negada. Selecione a pasta novamente.', 'error');
+        return;
+      }
+
+      const fsResult = pendingAction.actionType === 'DELETE_FILE'
+        ? await FsAgent.deleteFile(targetPath)
+        : await FsAgent.writeFile(targetPath, pendingAction.proposedContent || '');
+
+      if (!fsResult?.ok) {
+        if (card) card.classList.remove('processing');
+        setCardFsStatus(card, 'error', fsResult?.reason || 'erro desconhecido');
+        showFsToast(`Não foi possível salvar localmente: ${fsResult?.reason || 'erro desconhecido'}`, 'error');
+        return;
+      }
+
+      setCardFsStatus(card, 'saved', targetPath);
+      showFsToast(`${targetPath} salvo em ${FsAgent.getRootPath()}`, 'success');
+    }
+
+    // 1. Aprova no backend (após execução local para ações de arquivo)
     const res = await fetch(`${API.BASE}/api/agent/actions/${actionId}/approve`, { method: 'POST' });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
-    const action = await res.json();
+    await res.json();
 
+    // 3. Atualiza UI do card
     if (card) {
       card.classList.remove('processing');
       card.classList.add('approved');
-      card.querySelector('.agent-action-btns').innerHTML = '<span class="agent-status-badge approved">✓ Executado</span>';
-      setTimeout(() => card.remove(), 1500);
+      const btnsEl = card.querySelector('.agent-action-btns');
+      if (btnsEl) {
+        btnsEl.innerHTML = needsLocalWrite
+          ? `<span class="agent-status-badge approved">✓ Executado e salvo localmente</span>`
+          : `<span class="agent-status-badge approved">✓ Executado</span>`;
+      }
+      setTimeout(() => card.remove(), 2000);
     }
 
-    // Atualiza a sessão de código se a ação gerou arquivos
-    if (['CREATE_FILE', 'EDIT_FILE'].includes(action.actionType)) {
-      await loadCodeSession();
-      if (state.codeSession?.files?.length > 0) renderCodePanel();
-    }
-
-    // Remove da lista de pendentes
     state.pendingActions = state.pendingActions.filter(a => a.id !== actionId);
     if (state.pendingActions.length === 0) {
-      setTimeout(() => { el.agentActionsPanel.hidden = true; }, 1600);
+      setTimeout(() => { el.agentActionsPanel.hidden = true; }, 2100);
     }
   } catch (err) {
     console.error('Erro ao aprovar ação:', err);
     if (card) card.classList.remove('processing');
+    showFsToast(`Erro: ${err.message}`, 'error');
   }
 };
 
@@ -763,7 +1416,8 @@ window.rejectAgentAction = async function(actionId) {
     await fetch(`${API.BASE}/api/agent/actions/${actionId}/reject`, { method: 'POST' });
     if (card) {
       card.classList.add('rejected');
-      card.querySelector('.agent-action-btns').innerHTML = '<span class="agent-status-badge rejected">✕ Rejeitado</span>';
+      card.querySelector('.agent-action-btns').innerHTML =
+        '<span class="agent-status-badge rejected">✕ Rejeitado</span>';
       setTimeout(() => card.remove(), 1200);
     }
     state.pendingActions = state.pendingActions.filter(a => a.id !== actionId);
@@ -774,6 +1428,21 @@ window.rejectAgentAction = async function(actionId) {
     console.error('Erro ao rejeitar ação:', err);
   }
 };
+
+/** Exibe inline no card o status da escrita local */
+function setCardFsStatus(card, status, detail) {
+  if (!card) return;
+  let el = card.querySelector('.agent-action-fs-result');
+  if (!el) {
+    el = document.createElement('div');
+    el.className = 'agent-action-fs-result';
+    card.querySelector('.agent-action-btns')?.before(el);
+  }
+  el.className = `agent-action-fs-result fs-result--${status}`;
+  el.innerHTML = status === 'saved'
+    ? `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg> Salvo em <strong>${escapeHtml(FsAgent.getRootPath())}/${escapeHtml(detail)}</strong>`
+    : `<svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg> Falha ao salvar localmente: ${escapeHtml(detail)}`;
+}
 
 /* ════════════════════════════════════════════════════════════════
    GITHUB CONNECTOR
@@ -843,7 +1512,8 @@ function renderGithubRepos() {
 }
 
 async function connectGithubRepo() {
-  const fullName    = el.githubRepoInput.value.trim();
+  const repoInput   = el.githubRepoInput.value.trim();
+  const fullName    = parseGithubRepoInput(repoInput);
   const branch      = el.githubBranchInput.value.trim() || 'main';
   const accessToken = el.githubTokenInput.value.trim();
   const isPrivate   = el.githubPrivateChk.checked;
@@ -857,7 +1527,7 @@ async function connectGithubRepo() {
     const res = await fetch(`${API.BASE}/api/github/repositories`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fullName, branch, accessToken, isPrivate }),
+      body: JSON.stringify({ fullName, repoUrl: repoInput, branch, accessToken, isPrivate }),
     });
     if (!res.ok) {
       const err = await res.json();
@@ -1121,6 +1791,8 @@ async function loadConversation(id) {
       state.model = conv.modelName;
       await loadCapabilities(state.model);
     }
+    state.inlinePreviews = {};
+    state.nextInlinePreviewId = 0;
     el.messagesArea.innerHTML = '';
     showChat();
 
@@ -1144,17 +1816,28 @@ async function loadConversation(id) {
       .filter(m => m.role === 'user' || m.role === 'assistant')
       .forEach(msg => {
         const shouldShowThinking = msg.role === 'assistant' && msg.thinkingEnabled === true;
-        appendMessage(msg.role, msg.content, false, [], shouldShowThinking);
+        const msgEl = appendMessage(msg.role, msg.content, false, [], shouldShowThinking);
+        if (msg.role === 'assistant') {
+          const parsed = parseStoredMessage(msg.content || '');
+          if (isCodeGenerationResponse(parsed.content || '')) {
+            const textEl = msgEl.querySelector('.message-text');
+            if (textEl) renderCodeCompletionMessage(textEl, parsed.content || '');
+          }
+        }
       });
 
     scrollToBottom();
     document.querySelectorAll('.history-item').forEach(i => i.classList.remove('active'));
     document.querySelector(`.history-item[data-id="${id}"]`)?.classList.add('active');
 
-    // Carrega sessão de código se modo código ativo
-    if (state.codeModeEnabled) await loadCodeSession();
+    if (state.codeModeEnabled) {
+      await loadCodeSession();
+      // Re-renderiza a prévia quando troca de chat
+      if (state.codeSession?.files?.length > 0 && el.codePanel.classList.contains('open')) {
+        renderPreviewPane();
+      }
+    }
 
-    // Carrega ações pendentes se modo agente ativo
     if (state.agentModeEnabled) {
       const actRes = await fetch(`${API.BASE}/api/agent/actions/${id}`);
       if (actRes.ok) {
@@ -1225,6 +1908,8 @@ function newConversation() {
   state.conversationId = null;
   state.codeSession    = null;
   state.pendingActions = [];
+  state.inlinePreviews = {};
+  state.nextInlinePreviewId = 0;
   el.messagesArea.innerHTML = '';
   el.messageInput.value = '';
   updateCharCount();
@@ -1237,7 +1922,7 @@ function newConversation() {
 }
 
 /* ════════════════════════════════════════════════════════════════
-   ENVIO + STREAMING — agora passa codeMode, agentMode, githubRepoId
+   ENVIO + STREAMING
 ════════════════════════════════════════════════════════════════ */
 async function sendMessage() {
   const text = el.messageInput.value.trim();
@@ -1252,11 +1937,21 @@ async function sendMessage() {
   showChat();
 
   const thinkingActiveNow = state.thinkingMode;
+  const codeModeActiveNow = state.codeModeEnabled;
 
   appendMessage('user', text, false, filesToSend);
+
+  // Em modo código, cria mensagem do assistente com overlay de coding
   const assistantEl = appendMessage('assistant', '', true, [], thinkingActiveNow);
   const textEl   = assistantEl.querySelector('.message-text');
   const cursorEl = assistantEl.querySelector('.streaming-cursor');
+
+  // Ativa o overlay de coding imediatamente
+  if (codeModeActiveNow) {
+    // Remove cursor padrão do streaming
+    if (cursorEl) cursorEl.remove();
+    showCodingOverlay(assistantEl);
+  }
 
   setStreamingUI(true);
   state.abortController = new AbortController();
@@ -1299,6 +1994,7 @@ async function sendMessage() {
     const reader  = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = '', currentEvent = '';
+    let pendingCodeFilesPromise = null;
 
     while (true) {
       const { done, value } = await reader.read();
@@ -1308,7 +2004,7 @@ async function sendMessage() {
       buffer = lines.pop();
       let pendingData = null;
 
-      const flushEvent = (evName, data) => {
+      const flushEvent = async (evName, data) => {
         if (evName === 'conversation-id') { state.conversationId = data.trim(); return; }
 
         if (evName === 'search-start') {
@@ -1325,13 +2021,14 @@ async function sendMessage() {
           return;
         }
 
-        // Evento: arquivos de código gerados
         if (evName === 'code-files' && data.trim()) {
-          handleCodeFilesEvent(data.trim());
+          pendingCodeFilesPromise = handleCodeFilesEvent(data.trim())
+            .catch(e => console.error('Erro ao carregar sessão de código:', e))
+            .finally(() => { pendingCodeFilesPromise = null; });
+          await pendingCodeFilesPromise;
           return;
         }
 
-        // Evento: ações do agente
         if (evName === 'agent-actions' && data.trim()) {
           try {
             const actions = JSON.parse(data.trim());
@@ -1342,20 +2039,34 @@ async function sendMessage() {
           return;
         }
 
-        // Evento: contexto GitHub injetado
         if (evName === 'github-context') { return; }
 
         if (evName === 'done' || data.trim() === '[DONE]') {
-          cursorEl?.remove();
-          renderFinal(textEl, thinkingActiveNow ? thinkingText : '', fullResponse);
-          scrollToBottom(); return;
+          await Promise.resolve(pendingCodeFilesPromise);
+          if (codeModeActiveNow) {
+            // Marca arquivos como concluídos e aguarda um tick antes de limpar
+            markCodingFilesDone();
+            setTimeout(() => {
+              hideCodingOverlay();
+              // Substitui a mensagem do assistente por um resumo limpo
+              renderCodeCompletionMessage(textEl, fullResponse);
+              // Notifica o usuário se está em outra aba
+              notifyCodeGenerated();
+            }, 800);
+          } else {
+            cursorEl?.remove();
+            renderFinal(textEl, thinkingActiveNow ? thinkingText : '', fullResponse);
+          }
+          scrollToBottom();
+          return;
         }
         if (evName === 'error') {
+          hideCodingOverlay();
           textEl.innerHTML = `<span style="color:var(--danger)">Erro: ${escapeHtml(data.trim())}</span>`;
           cursorEl?.remove(); return;
         }
         if (evName === 'thinking') {
-          if (thinkingActiveNow) {
+          if (thinkingActiveNow && !codeModeActiveNow) {
             thinkingText += data;
             renderStreaming(textEl, thinkingText, fullResponse);
             scrollToBottom();
@@ -1364,15 +2075,20 @@ async function sendMessage() {
         }
         if (evName === 'token' || evName === '') {
           fullResponse += data;
-          renderStreaming(textEl, thinkingActiveNow ? thinkingText : '', fullResponse);
-          scrollToBottom();
+          if (codeModeActiveNow) {
+            // Detecta nomes de arquivo no buffer mas NÃO renderiza o código no chat
+            detectFilesInBuffer(data);
+          } else {
+            renderStreaming(textEl, thinkingActiveNow ? thinkingText : '', fullResponse);
+            scrollToBottom();
+          }
         }
       };
 
       for (const line of lines) {
         const trimmed = line.trim();
         if (trimmed.startsWith('event:')) {
-          if (pendingData !== null) { flushEvent(currentEvent, pendingData); pendingData = null; }
+          if (pendingData !== null) { await flushEvent(currentEvent, pendingData); pendingData = null; }
           currentEvent = trimmed.slice(6).trim(); continue;
         }
         if (line.startsWith('data:')) {
@@ -1381,23 +2097,35 @@ async function sendMessage() {
           continue;
         }
         if (trimmed === '') {
-          if (pendingData !== null) { flushEvent(currentEvent, pendingData); pendingData = null; }
+          if (pendingData !== null) { await flushEvent(currentEvent, pendingData); pendingData = null; }
           currentEvent = '';
         }
       }
-      if (pendingData !== null) { flushEvent(currentEvent, pendingData); pendingData = null; }
+      if (pendingData !== null) { await flushEvent(currentEvent, pendingData); pendingData = null; }
     }
 
-    if (textEl.querySelector('.streaming-cursor')) {
+    await Promise.resolve(pendingCodeFilesPromise);
+
+    // Fallback: se o done não chegou via evento
+    if (codeModeActiveNow && _codingOverlayEl) {
+      markCodingFilesDone();
+      setTimeout(() => {
+        hideCodingOverlay();
+        renderCodeCompletionMessage(textEl, fullResponse);
+      }, 800);
+    } else if (!codeModeActiveNow && textEl.querySelector('.streaming-cursor')) {
       cursorEl?.remove();
       renderFinal(textEl, thinkingActiveNow ? thinkingText : '', fullResponse);
     }
+
   } catch (err) {
     searchBanner?.remove();
     el.btnWebSearch.classList.remove('searching');
+    hideCodingOverlay();
     if (err.name === 'AbortError') {
       cursorEl?.remove();
-      if (fullResponse) renderFinal(textEl, thinkingActiveNow ? thinkingText : '', fullResponse);
+      if (fullResponse && !codeModeActiveNow) renderFinal(textEl, thinkingActiveNow ? thinkingText : '', fullResponse);
+      else if (codeModeActiveNow) renderCodeCompletionMessage(textEl, fullResponse);
       else textEl.innerHTML = '<em style="color:var(--text-2)">Geração interrompida.</em>';
     } else {
       console.error('Erro SSE:', err);
@@ -1412,47 +2140,247 @@ async function sendMessage() {
   }
 }
 
+/* Renderiza mensagem de conclusão com preview inline (estilo Arena) */
+function renderCodeCompletionMessage(textEl, rawResponse) {
+  // Extrai texto explicativo (sem os blocos de código)
+  const withoutCode = rawResponse.replace(/```[\s\S]*?```/g, '').trim();
+
+  const files = buildFilesFromResponse(rawResponse);
+  if (!files.length && state.codeSession?.files?.length) {
+    files.push(...state.codeSession.files.map(f => ({ ...f })));
+  }
+
+  const previewId = `preview-${Date.now()}-${state.nextInlinePreviewId++}`;
+  state.inlinePreviews[previewId] = files;
+
+  // Monta HTML inline preview
+  const previewHtml = buildInlineCodePreview(rawResponse, withoutCode, files, previewId);
+  textEl.innerHTML = previewHtml;
+
+  // Aplica syntax highlight nos blocos de código que ficarem visíveis
+  textEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+  applyKaTeX(textEl);
+}
+
+/**
+ * Constrói o preview inline no estilo Arena:
+ * - Texto explicativo em cima
+ * - Preview do resultado rodando (iframe se HTML, ou editor destacado)
+ * - Botão para alternar entre Preview e Código
+ */
+function buildInlineCodePreview(rawResponse, explanationText, files, previewId) {
+
+  // Detecta arquivo HTML para preview ao vivo
+  const htmlFile = files.find(f => f.extension === 'html' || f.fileName?.endsWith('.html'));
+  const cssFiles = files.filter(f => f.extension === 'css');
+  const jsFiles  = files.filter(f => f.extension === 'js');
+
+  let previewContent = '';
+
+  if (htmlFile) {
+    // Monta HTML completo injetando CSS e JS
+    let html = htmlFile.content || '';
+    cssFiles.forEach(f => {
+      const tag = `<style>/* ${f.fileName} */\n${f.content}</style>`;
+      html = html.includes('</head>') ? html.replace('</head>', tag + '</head>') : tag + html;
+    });
+    jsFiles.forEach(f => {
+      const tag = `<script>/* ${f.fileName} */\n${f.content}<\/script>`;
+      html = html.includes('</body>') ? html.replace('</body>', tag + '</body>') : html + tag;
+    });
+
+    // Encode para srcdoc seguro
+    const encoded = html
+      .replace(/&/g, '&amp;')
+      .replace(/"/g, '&quot;');
+
+    previewContent = `
+      <div class="inline-preview-pane inline-preview-pane--preview">
+        <iframe
+          class="inline-preview-iframe"
+          sandbox="allow-scripts allow-same-origin"
+          srcdoc="${encoded}"
+        ></iframe>
+      </div>
+      <div class="inline-code-pane inline-code-pane--code" style="display:none">
+        <div class="inline-code-files">
+          ${files.map(f => `
+            <div class="inline-code-file-tab ${f.id === files[0]?.id ? 'active' : ''}"
+                 onclick="switchInlineTab(this, '${f.id}', '${previewId}')">
+              ${getFileIcon(f.extension || '')} ${escapeHtml(f.fileName)}
+            </div>
+          `).join('')}
+        </div>
+        <div class="inline-code-editor inline-code-editor-body">
+          ${buildInlineEditor(files[0])}
+        </div>
+      </div>
+    `;
+  } else if (files.length > 0) {
+    // Sem HTML: mostra o primeiro arquivo no editor
+    previewContent = `
+      <div class="inline-preview-pane inline-preview-pane--nohtml inline-preview-pane--preview">
+        <div class="inline-no-preview-icon">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+          </svg>
+        </div>
+        <p>${files.length} arquivo${files.length !== 1 ? 's' : ''} gerado${files.length !== 1 ? 's' : ''}</p>
+        <div class="inline-file-chips">
+          ${files.map(f => `<span class="inline-file-chip">${getFileIcon(f.extension || '')} ${escapeHtml(f.fileName)}</span>`).join('')}
+        </div>
+      </div>
+      <div class="inline-code-pane inline-code-pane--code" style="display:none">
+        <div class="inline-code-files">
+          ${files.map(f => `
+            <div class="inline-code-file-tab ${f.id === files[0]?.id ? 'active' : ''}"
+                 onclick="switchInlineTab(this, '${f.id}', '${previewId}')">
+              ${getFileIcon(f.extension || '')} ${escapeHtml(f.fileName)}
+            </div>
+          `).join('')}
+        </div>
+        <div class="inline-code-editor inline-code-editor-body">
+          ${buildInlineEditor(files[0])}
+        </div>
+      </div>
+    `;
+  }
+
+  const explanationHtml = explanationText
+    ? `<div class="inline-explanation">${renderMarkdown(explanationText)}</div>`
+    : '';
+
+  const tabBar = files.length > 0 ? `
+    <div class="inline-code-tabs">
+      <button class="inline-tab active" onclick="toggleInlineView('preview', this, '${previewId}')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <rect x="3" y="3" width="18" height="18" rx="2"/>
+          <path d="M3 9h18M9 21V9"/>
+        </svg>
+        Prévia
+      </button>
+      <button class="inline-tab" onclick="toggleInlineView('code', this, '${previewId}')">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <polyline points="16 18 22 12 16 6"/><polyline points="8 6 2 12 8 18"/>
+        </svg>
+        Código
+      </button>
+      <button class="inline-tab inline-tab--open" onclick="openCodePanelFromBanner()" title="Abrir painel completo">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/>
+        </svg>
+        Expandir
+      </button>
+    </div>
+    <div class="inline-code-shell" data-preview-id="${previewId}">
+      ${previewContent}
+    </div>
+  ` : '';
+
+  return explanationHtml + tabBar;
+}
+
+function buildInlineEditor(file) {
+  if (!file) return '';
+  const language = file.extension && hljs.getLanguage(file.extension) ? file.extension : null;
+  const result   = language
+    ? hljs.highlight(file.content || '', { language })
+    : hljs.highlightAuto(file.content || '');
+
+  const lines    = result.value.split('\n');
+  const lineNums = lines.map((_, i) => `<span class="line-number">${i + 1}</span>`).join('\n');
+  const codeLines = lines.map(l => `<span class="code-line">${l}</span>`).join('\n');
+
+  return `
+    <div class="code-with-lines">
+      <div class="line-numbers-col" aria-hidden="true">${lineNums}</div>
+      <code class="hljs code-lines-col">${codeLines}</code>
+    </div>
+  `;
+}
+
+window.toggleInlineView = function(view, btnEl, previewId) {
+  const shell = btnEl.closest(`.inline-code-shell[data-preview-id="${previewId}"]`);
+  if (!shell) return;
+
+  const previewPane = shell.querySelector('.inline-preview-pane--preview');
+  const codePane    = shell.querySelector('.inline-code-pane--code');
+  const tabs = btnEl.closest('.inline-code-tabs')?.querySelectorAll('.inline-tab:not(.inline-tab--open)') || [];
+  tabs.forEach(t => t.classList.remove('active'));
+  btnEl.classList.add('active');
+
+  if (view === 'preview') {
+    if (previewPane) previewPane.style.display = '';
+    if (codePane)    codePane.style.display = 'none';
+  } else {
+    if (previewPane) previewPane.style.display = 'none';
+    if (codePane)    codePane.style.display = '';
+  }
+};
+
+window.switchInlineTab = function(tabEl, fileId, previewId) {
+  const container = tabEl.closest('.inline-code-pane');
+  if (!container) return;
+  container.querySelectorAll('.inline-code-file-tab').forEach(t => t.classList.remove('active'));
+  tabEl.classList.add('active');
+
+  const files = state.inlinePreviews[previewId] || [];
+  const file = files.find(f => f.id === fileId);
+  const editor = container.querySelector('.inline-code-editor-body');
+  if (file && editor) editor.innerHTML = buildInlineEditor(file);
+};
+
+function isCodeGenerationResponse(content) {
+  return /```[a-zA-Z0-9+#_-]+:[^\n`]+\n[\s\S]*?```/m.test(content || '');
+}
+
+function buildFilesFromResponse(rawResponse) {
+  const files = [];
+  const regex = /```([a-zA-Z0-9+#_-]+):([^\n`]+)\n([\s\S]*?)```/g;
+  let match;
+
+  while ((match = regex.exec(rawResponse || '')) !== null) {
+    const language = (match[1] || '').trim().toLowerCase();
+    const filePath = (match[2] || '').trim();
+    const content = (match[3] || '').replace(/\n$/, '');
+    if (!filePath) continue;
+
+    const parts = filePath.split('/');
+    const fileName = parts[parts.length - 1] || filePath;
+    const dot = fileName.lastIndexOf('.');
+    const extension = dot > -1 ? fileName.slice(dot + 1).toLowerCase() : language;
+
+    files.push({
+      id: `inline-${files.length + 1}-${Date.now()}`,
+      filePath,
+      fileName,
+      extension,
+      content,
+    });
+  }
+
+  return files;
+}
+
 async function handleCodeFilesEvent(data) {
-  // data = "path|id|new/updated|version;path2|id2|..."
   const files = data.split(';').map(s => {
     const [path, id, status, version] = s.split('|');
     return { path, id, status, version: parseInt(version) };
   });
 
-  // Atualiza/cria badge de arquivos no chat
-  showCodeFilesBadge(files);
+  // Atualiza os arquivos detectados no overlay
+  files.forEach(f => {
+    if (f.path) updateCodingOverlayFile(f.path);
+  });
 
-  // Atualiza sessão e abre painel
   await loadCodeSession();
   if (state.codeSession?.files?.length > 0) {
     renderCodePanel();
+    // Abre na aba preview por padrão ao concluir
+    activeTab = 'preview';
+    switchCodeTab('preview');
   }
 }
-
-function showCodeFilesBadge(files) {
-  // Remove badge anterior se existir
-  document.querySelector('.code-files-banner')?.remove();
-
-  const banner = document.createElement('div');
-  banner.className = 'code-files-banner';
-  const newCount     = files.filter(f => f.status === 'new').length;
-  const updatedCount = files.filter(f => f.status === 'updated').length;
-
-  let text = '📁 ';
-  if (newCount > 0)     text += `${newCount} arquivo${newCount > 1 ? 's' : ''} criado${newCount > 1 ? 's' : ''}`;
-  if (updatedCount > 0) text += `${newCount > 0 ? ', ' : ''}${updatedCount} atualizado${updatedCount > 1 ? 's' : ''}`;
-
-  banner.innerHTML = `
-    ${text}
-    <button class="code-banner-btn" onclick="openCodePanelFromBanner()">Ver Arquivos →</button>
-  `;
-  el.messagesArea.appendChild(banner);
-  scrollToBottom();
-}
-
-window.openCodePanelFromBanner = function() {
-  if (state.codeSession) renderCodePanel();
-};
 
 /* ════════════════════════════════════════════════════════════════
    RENDERIZAÇÃO
@@ -1474,6 +2402,7 @@ function renderStreaming(textEl, thinking, content) {
   const safe  = count % 2 !== 0 ? content + '\n```' : content;
   html += renderMarkdown(safe) + '<span class="streaming-cursor"></span>';
   textEl.innerHTML = html;
+  applyKaTeX(textEl);
 }
 
 function renderFinal(textEl, thinking, content) {
@@ -1482,6 +2411,23 @@ function renderFinal(textEl, thinking, content) {
   html += renderMarkdown(content);
   textEl.innerHTML = html;
   textEl.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+  applyKaTeX(textEl);
+}
+
+/** Aplica KaTeX se disponível */
+function applyKaTeX(el) {
+  if (typeof renderMathInElement === 'undefined') return;
+  try {
+    renderMathInElement(el, {
+      delimiters: [
+        { left: '$$', right: '$$', display: true  },
+        { left: '$',  right: '$',  display: false },
+        { left: '\\[', right: '\\]', display: true  },
+        { left: '\\(', right: '\\)', display: false },
+      ],
+      throwOnError: false,
+    });
+  } catch(e) { /* silencioso */ }
 }
 
 function appendMessage(role, rawContent, streaming, files = [], thinkingWasActive = null) {
@@ -1547,6 +2493,7 @@ function appendMessage(role, rawContent, streaming, files = [], thinkingWasActiv
     </div>
   `;
   if (!streaming && displayContent) msg.querySelectorAll('pre code').forEach(b => hljs.highlightElement(b));
+  if (!streaming) applyKaTeX(msg.querySelector('.message-text'));
   el.messagesArea.appendChild(msg);
   scrollToBottom();
   return msg;
@@ -1554,6 +2501,23 @@ function appendMessage(role, rawContent, streaming, files = [], thinkingWasActiv
 
 function renderMarkdown(text) {
   try { return marked.parse(text || ''); } catch { return escapeHtml(text || ''); }
+}
+
+function parseGithubRepoInput(value) {
+  const raw = (value || '').trim();
+  if (!raw) return '';
+
+  const normalized = raw
+    .replace(/^git@github\.com:/i, '')
+    .replace(/^https?:\/\/(www\.)?github\.com\//i, '')
+    .replace(/^github\.com\//i, '')
+    .replace(/\.git$/i, '')
+    .replace(/^\/+|\/+$/g, '');
+
+  const match = normalized.match(/^([^/\s]+)\/([^/\s]+)$/);
+  if (match) return `${match[1]}/${match[2]}`;
+
+  return raw;
 }
 
 /* ════════════════════════════════════════════════════════════════

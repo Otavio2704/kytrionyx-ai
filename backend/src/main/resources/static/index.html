@@ -10,8 +10,12 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/atom-one-dark.min.css" id="hljs-theme" />
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/11.1.1/marked.min.js"></script>
+  <!-- KaTeX - renderizacao de formulas LaTeX -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" />
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
+  <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
   <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Cpolygon points='50,5 93,27.5 93,72.5 50,95 7,72.5 7,27.5' fill='%2310a37f'/%3E%3Ctext x='50' y='67' font-size='48' text-anchor='middle' fill='%23FFFFFF' font-family='system-ui' font-weight='bold'%3E💬%3C/text%3E%3C/svg%3E" />
-  <link rel="stylesheet" href="/style.css" />
+  <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
 
@@ -202,7 +206,7 @@
     <!-- Área de mensagens -->
     <div class="messages-area" id="messages-area"></div>
 
-    <!-- Painel de ações do agente (fixo acima do input) -->
+    <!-- Painel de ações do agente -->
     <div class="agent-actions-panel" id="agent-actions-panel" hidden>
       <div class="agent-actions-header">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -300,6 +304,7 @@
        PAINEL MODO CÓDIGO (slide-in da direita)
   ══════════════════════════════════════════════════════ -->
   <div class="code-panel" id="code-panel">
+    <div class="code-panel-resize-handle" id="code-panel-resize-handle" title="Arraste para ajustar a largura"></div>
     <div class="code-panel-header">
       <div class="code-panel-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -329,27 +334,49 @@
       </div>
     </div>
 
-    <div class="code-panel-body">
-      <div class="code-file-tree" id="code-file-tree">
-        <div style="padding:16px;color:var(--text-2);font-size:12px;text-align:center">
-          Nenhum arquivo gerado ainda.
-        </div>
-      </div>
+    <!-- ▼▼▼ MUDANÇA ESTRUTURAL AQUI ▼▼▼ -->
 
-      <div class="code-editor">
-        <div class="code-editor-topbar">
-          <span class="code-editor-filename" id="code-editor-filename">Selecione um arquivo</span>
-        </div>
-        <div class="code-editor-content" id="code-editor-content">
-          <div style="padding:24px;color:var(--text-2);font-size:12px">
-            Selecione um arquivo na árvore à esquerda para visualizar.
+    <!-- Tabs: Prévia / Código -->
+    <div class="code-panel-tabs" id="code-panel-tabs"></div>
+
+    <div class="code-panel-body">
+      <div class="code-panel-body-inner">
+
+        <!-- Árvore de arquivos -->
+        <div class="code-file-tree" id="code-file-tree">
+          <div style="padding:16px;color:var(--text-2);font-size:12px;text-align:center">
+            Nenhum arquivo gerado ainda.
           </div>
         </div>
+
+        <!-- Painel de prévia -->
+        <div class="code-panel-preview" id="code-panel-preview" hidden></div>
+
+        <!-- Editor / Visualizador -->
+        <div class="code-editor">
+          <div class="code-editor-topbar">
+            <span class="code-editor-filename" id="code-editor-filename">Selecione um arquivo</span>
+          </div>
+          <div class="code-editor-content" id="code-editor-content">
+            <div style="padding:24px;color:var(--text-2);font-size:12px">
+              Selecione um arquivo na árvore à esquerda para visualizar.
+            </div>
+          </div>
+        </div>
+
       </div>
     </div>
+
+    <!-- ▲▲▲ FIM DA MUDANÇA ESTRUTURAL ▲▲▲ -->
+
   </div>
 
+  <!-- Overlay para fechar o painel de código no mobile -->
   <div class="code-panel-overlay" onclick="closeCodePanel()"></div>
+
+  <!-- ══════════════════════════════════════════════════════
+       MODAIS EXISTENTES
+  ══════════════════════════════════════════════════════ -->
 
   <!-- Modal info do modelo -->
   <div class="modal-backdrop" id="modal-backdrop" hidden>
@@ -402,10 +429,11 @@
       <div class="modal-body github-body">
         <div class="github-connect-form">
           <div class="github-form-row">
-            <input type="text" id="github-repo-input" class="rename-input" placeholder="owner/repositório (ex: Otavio2704/kyron-ai)" style="margin-bottom:0;flex:1" />
+            <input type="text" id="github-repo-input" class="rename-input" placeholder="URL ou owner/repositório (ex: https://github.com/Otavio2704/kyron-ai)" style="margin-bottom:0;flex:1" />
             <input type="text" id="github-branch-input" class="rename-input" placeholder="branch (main)" style="margin-bottom:0;width:120px" />
           </div>
           <input type="password" id="github-token-input" class="rename-input" placeholder="Personal Access Token (opcional, para repos privados)" style="margin-bottom:0" />
+          <div class="github-form-hint">Cole a URL completa ou apenas <span>owner/repo</span>. O token é usado para repositórios privados.</div>
           <div class="github-form-footer">
             <label class="toggle-label" style="gap:6px;font-size:12px">
               <input type="checkbox" id="github-private-chk" />
@@ -523,6 +551,42 @@
     </div>
   </div>
 
-  <script src="/app.js"></script>
+  <!-- Kyron AI - Modular JS Architecture -->
+  <!-- Core dependencies loaded first -->
+  <script src="./modules/state.js"></script>
+  <script src="./modules/utils.js"></script>
+  
+  <!-- UI preferences and setup -->
+  <script src="./modules/preferences.js"></script>
+  <script src="./modules/setup.js"></script>
+  
+  <!-- Model and capabilities management -->
+  <script src="./modules/capabilities.js"></script>
+  <script src="./modules/models.js"></script>
+  
+  <!-- Feature modules -->
+  <script src="./modules/attachments.js"></script>
+  <script src="./modules/streaming.js"></script>
+  <script src="./modules/code-panel.js"></script>
+  <script src="./modules/code-completion.js"></script>
+  
+  <!-- Integration modules -->
+  <script src="./modules/fs-agent.js"></script>
+  <script src="./modules/github.js"></script>
+  <script src="./modules/agent-mode.js"></script>
+  
+  <!-- Data management -->
+  <script src="./modules/history.js"></script>
+  <script src="./modules/memory.js"></script>
+  <script src="./modules/projects.js"></script>
+  
+  <!-- Communication -->
+  <script src="./modules/chat.js"></script>
+  
+  <!-- Event listeners must load last -->
+  <script src="./modules/event-listeners.js"></script>
+  
+  <!-- Initialize the application -->
+  <script>init();</script>
 </body>
 </html>

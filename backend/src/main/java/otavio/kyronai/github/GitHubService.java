@@ -62,8 +62,9 @@ public class GitHubService {
     }
 
     @Transactional
-    public GitHubRepoDTO connectRepo(String fullName, String branch,
+    public GitHubRepoDTO connectRepo(String repositoryInput, String branch,
                                       String accessToken, boolean isPrivate) {
+        String fullName = normalizeFullName(repositoryInput);
         if (!fullName.matches("[\\w.-]+/[\\w.-]+"))
             throw new IllegalArgumentException("Formato inválido. Use: owner/repositório");
 
@@ -81,6 +82,23 @@ public class GitHubService {
         GitHubRepo saved = repoStore.save(repo);
         indexingExecutor.execute(() -> indexRepo(saved.getId()));
         return GitHubRepoDTO.fromEntity(saved);
+    }
+
+    private String normalizeFullName(String input) {
+        if (input == null) return "";
+
+        String normalized = input.trim()
+                .replaceFirst("^git@github\\.com:", "")
+                .replaceFirst("^https?://(www\\.)?github\\.com/", "")
+                .replaceFirst("^github\\.com/", "")
+                .replaceFirst("\\.git$", "")
+                .replaceAll("^/+|/+$", "");
+
+        if (normalized.matches("[\\w.-]+/[\\w.-]+")) {
+            return normalized;
+        }
+
+        return input.trim();
     }
 
     @Transactional

@@ -23,17 +23,19 @@ public class GitHubController {
     }
 
     @PostMapping("/repositories")
-    public ResponseEntity<?> connect(@RequestBody Map<String, Object> body) {
+    public ResponseEntity<Object> connect(@RequestBody Map<String, Object> body) {
         String  fullName    = (String)  body.get("fullName");
+        String  repoUrl     = (String)  body.get("repoUrl");
         String  branch      = (String)  body.getOrDefault("branch", "main");
         String  accessToken = (String)  body.get("accessToken");
         boolean isPrivate   = Boolean.TRUE.equals(body.get("isPrivate"));
 
-        if (fullName == null || fullName.isBlank())
-            return ResponseEntity.badRequest().body(Map.of("error", "fullName é obrigatório"));
+        String repositoryInput = repoUrl != null && !repoUrl.isBlank() ? repoUrl : fullName;
+        if (repositoryInput == null || repositoryInput.isBlank())
+            return ResponseEntity.badRequest().body(Map.of("error", "URL ou owner/repo é obrigatório"));
 
         try {
-            return ResponseEntity.ok(gitHubService.connectRepo(fullName, branch, accessToken, isPrivate));
+            return ResponseEntity.ok(gitHubService.connectRepo(repositoryInput, branch, accessToken, isPrivate));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().body(Map.of("error", e.getMessage()));
         }

@@ -4,6 +4,9 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import otavio.kyronai.agent.AgentAction;
+import otavio.kyronai.agent.AgentActionRepository;
+import otavio.kyronai.code.CodeSessionRepository;
 
 import java.util.List;
 import java.util.Optional;
@@ -16,6 +19,8 @@ public class ConversationService {
 
     private final ConversationRepository conversationRepository;
     private final MessageRepository messageRepository;
+    private final CodeSessionRepository codeSessionRepository;
+    private final AgentActionRepository agentActionRepository;
 
     @Transactional
     public UUID createConversation(String title, String modelName) {
@@ -43,7 +48,7 @@ public class ConversationService {
     @Transactional(readOnly = true)
     public Optional<Conversation> getConversationById(UUID id) {
         return conversationRepository.findById(id).map(c -> {
-            c.getMessages().size(); // força load LAZY
+            c.getMessages().forEach(message -> { }); // força load LAZY
             return c;
         });
     }
@@ -56,6 +61,12 @@ public class ConversationService {
     @Transactional
     public boolean deleteConversation(UUID id) {
         if (!conversationRepository.existsById(id)) return false;
+        codeSessionRepository.findByConversationId(id)
+                .ifPresent(codeSessionRepository::delete);
+        List<AgentAction> actions = agentActionRepository.findByConversationIdOrderByExecutionOrderAsc(id);
+        if (!actions.isEmpty()) {
+            agentActionRepository.deleteAll(actions);
+        }
         conversationRepository.deleteById(id);
         return true;
     }
@@ -85,12 +96,17 @@ public class ConversationService {
 
     @Transactional
     public Message addMessage(UUID conversationId, String role, String content) {
-        return addMessage(conversationId, role, content, false);
+        return saveMessage(conversationId, role, content, false);
     }
 
     @Transactional
     public Message addMessage(UUID conversationId, String role,
                                String content, boolean thinkingEnabled) {
+        return saveMessage(conversationId, role, content, thinkingEnabled);
+    }
+
+    private Message saveMessage(UUID conversationId, String role,
+                                String content, boolean thinkingEnabled) {
         Conversation c = conversationRepository.findById(conversationId)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "Conversa não encontrada: " + conversationId));
