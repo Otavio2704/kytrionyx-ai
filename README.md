@@ -1,4 +1,4 @@
-# 🤖 Kytrionyx AI
+![Kytrionyx AI](Kytrionyx-AI.png)
 
 ![Licença](https://img.shields.io/badge/license-MIT-green.svg)
 ![Java](https://img.shields.io/badge/java-17-orangered)
