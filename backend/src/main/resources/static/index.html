@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.css" />
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/katex.min.js"></script>
   <script defer src="https://cdnjs.cloudflare.com/ajax/libs/KaTeX/0.16.9/contrib/auto-render.min.js"></script>
-  <link rel="icon" type="image/png" href="./kytrionyx-logo.png" />
+  <link rel="icon" type="image/png" href="./kytrionyx-logo.png" id="app-favicon" />
   <link rel="stylesheet" href="./style.css" />
 </head>
 <body>
@@ -23,8 +23,8 @@
   <aside class="sidebar" id="sidebar">
     <div class="sidebar-header">
       <div class="logo">
-        <img class="logo-hex" src="./kytrionyx-logo.png" alt="Logo Kytrionyx AI" />
-        <img class="logo-text" src="./kytrionyx-letra.png" alt="Kytrionyx AI" />
+        <img class="logo-hex" src="./kytrionyx-logo.png" data-theme-dark-src="./kytrionyx-logo.png" data-theme-light-src="./kytrionyx-logo-claro.png" alt="Logo Kytrionyx AI" />
+        <img class="logo-text" src="./kytrionyx-letra.png" data-theme-dark-src="./kytrionyx-letra.png" data-theme-light-src="./kytrionyx-letra-claro.png" alt="Kytrionyx AI" />
       </div>
       <button class="btn-new-chat" id="btn-new-chat" data-i18n-title="newChat">
         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -201,8 +201,8 @@
 
     <!-- Tela de boas-vindas -->
     <div class="welcome-screen" id="welcome-screen">
-      <img class="welcome-hex" src="./kytrionyx-logo.png" alt="Logo Kytrionyx AI" />
-      <h1 class="welcome-title" aria-label="Kytrionyx AI"><span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">Kytrionyx AI</span><img class="welcome-title-image" src="./kytrionyx-letra.png" alt="" /></h1>
+      <img class="welcome-hex" src="./kytrionyx-logo.png" data-theme-dark-src="./kytrionyx-logo.png" data-theme-light-src="./kytrionyx-logo-claro.png" alt="Logo Kytrionyx AI" />
+      <h1 class="welcome-title" aria-label="Kytrionyx AI"><span style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0;">Kytrionyx AI</span><img class="welcome-title-image" src="./kytrionyx-letra.png" data-theme-dark-src="./kytrionyx-letra.png" data-theme-light-src="./kytrionyx-letra-claro.png" alt="" /></h1>
       <p class="welcome-subtitle" data-i18n-html="welcomeSubtitle">Interface local para modelos open source.<br/>Seus dados ficam no seu hardware.</p>
       <div class="welcome-suggestions">
         <button class="suggestion-chip" data-prompt="Explique o que é um design pattern em orientação a objetos">Design Patterns</button>

@@ -56,6 +56,7 @@
   --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.6);
   --glow:      0 0 24px rgba(0,229,160,0.15);
+  --assistant-avatar-image: url('./kytrionyx-logo.png');
 }
 
 /* ── Light Theme ────────────────────────────────────────── */
@@ -92,6 +93,26 @@
   --shadow-md: 0 4px 16px rgba(0,0,0,0.1);
   --shadow-lg: 0 12px 40px rgba(0,0,0,0.15);
   --glow:      0 0 24px rgba(0,184,122,0.12);
+  --assistant-avatar-image: url('./kytrionyx-logo-claro.png');
+}
+
+[data-theme="light"] .logo-hex {
+  width: 36px;
+  height: 36px;
+}
+
+[data-theme="light"] .logo-text {
+  height: 44px;
+}
+
+[data-theme="light"] .welcome-hex {
+  width: clamp(48px, 5vw, 92px);
+  height: clamp(48px, 5vw, 108px);
+}
+
+[data-theme="light"] .welcome-title-image {
+  width: min(520px, 92vw);
+  max-height: 72px;
 }
 
 /* ── Reset ──────────────────────────────────────────────── */
@@ -1090,7 +1111,7 @@ input[type="range"] {
 }
 
 .message.assistant .message-avatar {
-  background: center / 78% no-repeat url('./kytrionyx-logo.png'), var(--accent-glow);
+  background: center / 78% no-repeat var(--assistant-avatar-image), var(--accent-glow);
   border: 1px solid var(--border-accent);
   color: transparent;
   font-size: 0;
